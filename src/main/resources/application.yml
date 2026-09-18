@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: java-task-manager-portfolio
+
+  datasource:
+    url: "${DB_URL:jdbc:postgresql://localhost:5432/task_manager}"
+    username: "${DB_USERNAME:task_manager}"
+    password: "${DB_PASSWORD}"
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+
+server:
+  address: "${SERVER_ADDRESS:127.0.0.1}"
+  port: "${SERVER_PORT:8080}"
