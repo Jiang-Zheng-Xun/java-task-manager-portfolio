@@ -1,0 +1,16 @@
+target/
+
+.idea/
+*.iml
+
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+
+.env
+.env.*
+!.env.example
+
+*.log
