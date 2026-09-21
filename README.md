@@ -4,17 +4,18 @@ A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, M
 
 ## Current scope
 
-The Day 1 baseline provides:
+The current prototype provides the first executable Task creation vertical slice:
 
-- Spring Boot application skeleton
-- Layered package boundaries
-- PostgreSQL development environment
+- `POST /api/tasks`
+- Request validation and strict rejection of unsupported fields
+- Domain-level creation invariants
+- PostgreSQL persistence with a database-generated ID
+- Safe `400 Bad Request` and `500 Internal Server Error` responses
+- Unit, web-layer, persistence, and full API integration tests
 - Flyway database migration
-- Spring application context test
-- Maven verification workflow
-- GitHub Actions CI baseline
+- Maven and GitHub Actions verification
 
-Task management API endpoints have not been implemented yet.
+The server initializes every new Task with status `TODO`. GET, update, completion, deletion, authentication, and deployment remain outside the current scope.
 
 ## Technology baseline
 
@@ -104,7 +105,7 @@ A successful startup includes:
 Started JavaTaskManagerPortfolioApplication
 ```
 
-The application listens on `127.0.0.1:8080` by default. The root path currently returns `404` because no API endpoint has been implemented yet.
+The application listens on `127.0.0.1:8080` by default. The implemented endpoint is `POST /api/tasks`; the root path is not an application endpoint.
 
 Stop the application with `Ctrl+C`.
 
@@ -113,6 +114,109 @@ Stop the local PostgreSQL container when finished:
 ```bash
 docker compose down
 ```
+
+## Create Task API
+
+### Endpoint
+
+```http
+POST /api/tasks
+Content-Type: application/json
+```
+
+The client supplies only `title` and optional `description`. The server generates `id`, initializes `status` to `TODO`, and sets both timestamps.
+
+The endpoint returns `201 Created` with the complete created Task
+representation. It intentionally does not return a `Location` header because a corresponding GET-by-ID resource contract has not yet been implemented.
+
+### Successful request
+
+With PostgreSQL and the application running, execute:
+
+```bash
+curl --include \
+  --request POST \
+  --header "Content-Type: application/json" \
+  --data '{
+    "title": "Prepare portfolio README",
+    "description": "Add API examples"
+  }' \
+  http://127.0.0.1:8080/api/tasks
+```
+
+Example response:
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+```
+
+```json
+{
+  "id": 1,
+  "title": "Prepare portfolio README",
+  "description": "Add API examples",
+  "status": "TODO",
+  "createdAt": "2026-09-21T13:30:00Z",
+  "updatedAt": "2026-09-21T13:30:00Z"
+}
+```
+
+The generated `id` and timestamps vary between executions.
+
+### Validation rules
+
+- `title` is required, must contain non-whitespace text, and must not exceed 200 characters.
+- `description` is optional and must not exceed 2000 characters when present.
+- Client-supplied fields such as `id` and `status` are rejected.
+- Invalid requests do not create database rows.
+
+### Blank-title example
+
+```bash
+curl --include \
+  --request POST \
+  --header "Content-Type: application/json" \
+  --data '{
+    "title": "   ",
+    "description": "Add API examples"
+  }' \
+  http://127.0.0.1:8080/api/tasks
+```
+
+Example response:
+
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+```
+
+```json
+{
+  "timestamp": "2026-09-21T13:31:00Z",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "title must not be blank",
+  "path": "/api/tasks"
+}
+```
+
+The timestamp varies between executions.
+
+### Unsupported-field example
+
+```bash
+curl --include \
+  --request POST \
+  --header "Content-Type: application/json" \
+  --data '{
+    "title": "Prepare portfolio README",
+    "status": "COMPLETED"
+  }' \
+  http://127.0.0.1:8080/api/tasks
+```
+
+This request returns `400 Bad Request`. Error responses use a stable public shape and do not expose stack traces, SQL, database endpoints, credentials, or internal class names.
 
 ## Database migration
 
