@@ -10,6 +10,9 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import io.github.jiangzhengxun.taskmanager.task.application.exception.TaskNotFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -57,6 +60,30 @@ public class GlobalExceptionHandler {
         if (message == null || message.isBlank()) {
             message = DEFAULT_VALIDATION_MESSAGE;
         }
+
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                message,
+                request);
+    }
+
+    @ExceptionHandler(TaskNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTaskNotFound(
+            TaskNotFoundException exception,
+            HttpServletRequest request) {
+        return buildErrorResponse(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request) {
+        String message = "id".equals(exception.getName())
+                ? "id must be a valid integer"
+                : DEFAULT_VALIDATION_MESSAGE;
 
         return buildErrorResponse(
                 HttpStatus.BAD_REQUEST,

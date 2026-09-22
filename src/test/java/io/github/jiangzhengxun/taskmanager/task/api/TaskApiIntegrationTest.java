@@ -21,13 +21,14 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @AutoConfigureTestDatabase(
         replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional
-class CreateTaskApiIntegrationTest {
+class TaskApiIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -67,6 +68,9 @@ class CreateTaskApiIntegrationTest {
                 result.getResponse().getContentAsString());
 
         long createdId = responseBody.get("id").asLong();
+
+        assertThat(result.getResponse().getHeader("Location"))
+                .isEqualTo("/api/tasks/" + createdId);
 
         assertThat(taskCount()).isEqualTo(rowCountBefore + 1);
 
@@ -133,6 +137,58 @@ class CreateTaskApiIntegrationTest {
                 """);
     }
 
+    @Test
+    void readsCreatedTaskFromPostgreSqlById() throws Exception {
+        MvcResult createResult = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Read Task by ID",
+                                  "description": "Verify full GET path"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode createResponse = objectMapper.readTree(
+                createResult.getResponse().getContentAsString());
+
+        long createdId = createResponse.get("id").asLong();
+
+        String location = createResult.getResponse()
+                .getHeader("Location");
+
+        assertThat(location)
+            .isEqualTo("/api/tasks/" + createdId);
+
+        mockMvc.perform(get(location))
+                .andExpect(status().isOk())
+                .andExpect(content()
+                        .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(createdId))
+                .andExpect(jsonPath("$.title")
+                        .value("Read Task by ID"))
+                .andExpect(jsonPath("$.description")
+                        .value("Verify full GET path"))
+                .andExpect(jsonPath("$.status").value("TODO"))
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.updatedAt").exists());
+    }
+
+    @Test
+    void returnsNotFoundForMissingTaskId() throws Exception {
+        mockMvc.perform(get("/api/tasks/{id}", Long.MAX_VALUE))
+                .andExpect(status().isNotFound())
+                .andExpect(content()
+                        .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"))
+                .andExpect(jsonPath("$.message")
+                        .value("Task not found: " + Long.MAX_VALUE))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/tasks/" + Long.MAX_VALUE));
+    }
+
     private void assertRejectedWithoutCreatingRow(String requestBody)
             throws Exception {
         long rowCountBefore = taskCount();
@@ -151,7 +207,7 @@ class CreateTaskApiIntegrationTest {
                 .andReturn();
 
 
-assertThat(taskCount()).isEqualTo(rowCountBefore);
+        assertThat(taskCount()).isEqualTo(rowCountBefore);
         String responseBody = result.getResponse().getContentAsString();
 
         assertThat(responseBody)

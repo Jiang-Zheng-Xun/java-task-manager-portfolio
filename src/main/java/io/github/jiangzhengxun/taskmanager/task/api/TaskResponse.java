@@ -5,7 +5,7 @@ import java.time.Instant;
 import io.github.jiangzhengxun.taskmanager.task.domain.Task;
 import io.github.jiangzhengxun.taskmanager.task.domain.TaskStatus;
 
-public record CreateTaskResponse(
+public record TaskResponse(
         Long id,
         String title,
         String description,
@@ -13,8 +13,8 @@ public record CreateTaskResponse(
         Instant createdAt,
         Instant updatedAt) {
 
-    public static CreateTaskResponse from(Task task) {
-        return new CreateTaskResponse(
+    public static TaskResponse from(Task task) {
+        return new TaskResponse(
                 task.id(),
                 task.title(),
                 task.description(),

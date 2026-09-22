@@ -7,15 +7,18 @@ A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, M
 The current prototype provides the first executable Task creation vertical slice:
 
 - `POST /api/tasks`
+- `GET /api/tasks/{id}`
 - Request validation and strict rejection of unsupported fields
-- Domain-level creation invariants
+- Domain-level creation and lookup rules
 - PostgreSQL persistence with a database-generated ID
-- Safe `400 Bad Request` and `500 Internal Server Error` responses
+- Safe `400 Bad Request`, `404 Not Found`, and
+  `500 Internal Server Error` responses
 - Unit, web-layer, persistence, and full API integration tests
 - Flyway database migration
 - Maven and GitHub Actions verification
 
-The server initializes every new Task with status `TODO`. GET, update, completion, deletion, authentication, and deployment remain outside the current scope.
+The server initializes every new Task with status `TODO`. Task collection lookup, update, completion, deletion, authentication,
+and deployment remain outside the current scope.
 
 ## Technology baseline
 
@@ -127,7 +130,7 @@ Content-Type: application/json
 The client supplies only `title` and optional `description`. The server generates `id`, initializes `status` to `TODO`, and sets both timestamps.
 
 The endpoint returns `201 Created` with the complete created Task
-representation. It intentionally does not return a `Location` header because a corresponding GET-by-ID resource contract has not yet been implemented.
+representation. The `Location` header identifies the corresponding GET-by-ID resource as `/api/tasks/{createdId}`.
 
 ### Successful request
 
@@ -148,6 +151,7 @@ Example response:
 
 ```http
 HTTP/1.1 201 Created
+Location: /api/tasks/1
 Content-Type: application/json
 ```
 
@@ -162,7 +166,7 @@ Content-Type: application/json
 }
 ```
 
-The generated `id` and timestamps vary between executions.
+The generated `id`, timestamps, and `Location` value vary between executions. The ID in `Location` matches the `id` in the response body.
 
 ### Validation rules
 
@@ -217,6 +221,84 @@ curl --include \
 ```
 
 This request returns `400 Bad Request`. Error responses use a stable public shape and do not expose stack traces, SQL, database endpoints, credentials, or internal class names.
+
+## Get Task by ID API
+
+### Endpoint
+
+```http
+GET /api/tasks/{id}
+Accept: application/json
+```
+
+The ID must be a positive integer within the Java `long` range.
+
+### Successful request
+
+Use the `Location` returned by a successful create request:
+
+```bash
+curl --include \
+  http://127.0.0.1:8080/api/tasks/1
+```
+
+Example response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "id": 1,
+  "title": "Prepare portfolio README",
+  "description": "Add API examples",
+  "status": "TODO",
+  "createdAt": "2026-09-22T08:55:00Z",
+  "updatedAt": "2026-09-22T08:55:00Z"
+}
+```
+
+Replace `1` with the actual ID returned by the create request.
+
+### Missing Task
+
+A valid positive ID that does not exist returns:
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+```
+
+The response uses the standard error shape and does not expose
+database or framework details.
+
+### Invalid ID
+
+Zero, negative, non-numeric, and out-of-range IDs return
+`400 Bad Request`. Type-conversion details and internal class names are not exposed.
+
+### Read-path architecture
+
+```text
+GET /api/tasks/{id}
+→ GetTaskByIdController
+→ GetTaskByIdUseCase
+→ GetTaskByIdService
+→ TaskRepository
+→ TaskRepositoryAdapter
+→ TaskJpaRepository
+→ PostgreSQL
+→ TaskMapper
+→ domain Task
+→ TaskResponse
+→ 200 OK
+```
+
+`TaskNotFoundException` represents a missing resource in the
+application layer. `GlobalExceptionHandler` maps that application
+meaning to `404 Not Found` at the HTTP boundary.
 
 ## Database migration
 
