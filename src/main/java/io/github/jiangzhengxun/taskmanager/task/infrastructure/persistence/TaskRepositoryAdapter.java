@@ -1,6 +1,7 @@
 package io.github.jiangzhengxun.taskmanager.task.infrastructure.persistence;
 
 import java.util.Objects;
+import java.util.Optional;
 
 import org.springframework.stereotype.Repository;
 
@@ -29,5 +30,11 @@ public class TaskRepositoryAdapter implements TaskRepository {
         TaskEntity entity = taskMapper.toEntity(task);
         TaskEntity savedEntity = taskJpaRepository.save(entity);
         return taskMapper.toDomain(savedEntity);
+    }
+
+    @Override
+    public Optional<Task> findById(long id) {
+        return taskJpaRepository.findById(id)
+                .map(taskMapper::toDomain);
     }
 }

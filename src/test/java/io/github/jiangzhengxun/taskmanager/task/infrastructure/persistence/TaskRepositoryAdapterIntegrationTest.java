@@ -58,4 +58,22 @@ class TaskRepositoryAdapterIntegrationTest {
         assertThat(persistedEntity.getCreatedAt()).isEqualTo(now);
         assertThat(persistedEntity.getUpdatedAt()).isEqualTo(now);
     }
+
+    @Test
+    void findsPersistedTaskById() {
+        Instant now = Instant.parse("2026-09-22T01:45:00Z");
+        Task savedTask = taskRepository.save(Task.create(
+                "Read Task by ID",
+                "Verify repository lookup",
+                now));
+
+        assertThat(taskRepository.findById(savedTask.id()))
+                .contains(savedTask);
+    }
+
+    @Test
+    void returnsEmptyWhenTaskDoesNotExist() {
+        assertThat(taskRepository.findById(Long.MAX_VALUE))
+                .isEmpty();
+    }
 }

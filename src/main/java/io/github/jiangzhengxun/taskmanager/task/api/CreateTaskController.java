@@ -1,10 +1,10 @@
 package io.github.jiangzhengxun.taskmanager.task.api;
 
 import java.util.Objects;
+import java.net.URI;
 
 import jakarta.validation.Valid;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,7 +28,7 @@ public class CreateTaskController {
     }
 
     @PostMapping
-    public ResponseEntity<CreateTaskResponse> create(
+    public ResponseEntity<TaskResponse> create(
         @Valid @RequestBody CreateTaskRequest request) {
         CreateTaskCommand command = new CreateTaskCommand(
                 request.title(),
@@ -36,8 +36,11 @@ public class CreateTaskController {
 
         Task createdTask = createTaskUseCase.create(command);
 
+        URI location = URI.create(
+                "/api/tasks/" + createdTask.id());
+
         return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(CreateTaskResponse.from(createdTask));
+                .created(location)
+                .body(TaskResponse.from(createdTask));
     }
 }

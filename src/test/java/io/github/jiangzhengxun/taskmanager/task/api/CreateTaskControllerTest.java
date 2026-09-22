@@ -60,7 +60,9 @@ class CreateTaskControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content()
                         .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(header().doesNotExist("Location"))
+                .andExpect(header().string(
+                    "Location",
+                    "/api/tasks/101"))
                 .andExpect(jsonPath("$.id").value(101))
                 .andExpect(jsonPath("$.title")
                         .value("Prepare portfolio README"))
