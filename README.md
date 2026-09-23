@@ -4,9 +4,10 @@ A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, M
 
 ## Current scope
 
-The current prototype provides the first executable Task creation vertical slice:
+The current prototype provides executable Task creation and read vertical slices:
 
 - `POST /api/tasks`
+- `GET /api/tasks`
 - `GET /api/tasks/{id}`
 - Request validation and strict rejection of unsupported fields
 - Domain-level creation and lookup rules
@@ -17,8 +18,7 @@ The current prototype provides the first executable Task creation vertical slice
 - Flyway database migration
 - Maven and GitHub Actions verification
 
-The server initializes every new Task with status `TODO`. Task collection lookup, update, completion, deletion, authentication,
-and deployment remain outside the current scope.
+The server initializes every new Task with status `TODO`. Collection results use deterministic ascending Task ID order. Pagination, client-controlled sorting, filtering, search, update, completion, deletion, authentication, and deployment remain outside the current scope.
 
 ## Technology baseline
 
@@ -108,7 +108,7 @@ A successful startup includes:
 Started JavaTaskManagerPortfolioApplication
 ```
 
-The application listens on `127.0.0.1:8080` by default. The implemented endpoint is `POST /api/tasks`; the root path is not an application endpoint.
+The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, and `GET /api/tasks/{id}`; the root path is not an application endpoint.
 
 Stop the application with `Ctrl+C`.
 
@@ -221,6 +221,90 @@ curl --include \
 ```
 
 This request returns `400 Bad Request`. Error responses use a stable public shape and do not expose stack traces, SQL, database endpoints, credentials, or internal class names.
+
+## List Tasks API
+
+### Endpoint
+
+```http
+GET /api/tasks
+Accept: application/json
+```
+
+The endpoint returns `200 OK` with a JSON array of complete Task representations. Results use deterministic ascending Task ID order.
+
+Pagination, client-controlled sorting, filtering, and search are not supported in the current scope.
+
+### Successful request
+
+With PostgreSQL and the application running, execute:
+
+```bash
+curl --include \
+  http://127.0.0.1:8080/api/tasks
+```
+
+Example response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Prepare portfolio README",
+    "description": "Add API examples",
+    "status": "TODO",
+    "createdAt": "2026-09-23T08:00:00Z",
+    "updatedAt": "2026-09-23T08:00:00Z"
+  },
+  {
+    "id": 2,
+    "title": "Verify collection endpoint",
+    "description": null,
+    "status": "TODO",
+    "createdAt": "2026-09-23T08:05:00Z",
+    "updatedAt": "2026-09-23T08:05:00Z"
+  }
+]
+```
+
+Generated IDs, timestamps, and stored Task values vary between executions.
+
+### Empty collection
+
+An empty collection is a successful result and returns:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+[]
+```
+
+### Collection read-path architecture
+
+```text
+GET /api/tasks
+→ ListTasksController
+→ ListTasksUseCase
+→ ListTasksService
+→ TaskRepository
+→ TaskRepositoryAdapter
+→ TaskJpaRepository
+→ PostgreSQL
+→ TaskMapper
+→ List<Task>
+→ List<TaskResponse>
+→ 200 OK
+```
+
+The persistence adapter retrieves rows in ascending ID order and maps each `TaskEntity` to a domain `Task`. The controller maps the domain collection to API `TaskResponse` objects. An empty repository result flows through the same path and becomes an empty JSON array.
 
 ## Get Task by ID API
 

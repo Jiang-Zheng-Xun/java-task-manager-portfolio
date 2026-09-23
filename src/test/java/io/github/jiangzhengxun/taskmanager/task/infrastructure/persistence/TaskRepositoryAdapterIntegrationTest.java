@@ -76,4 +76,29 @@ class TaskRepositoryAdapterIntegrationTest {
         assertThat(taskRepository.findById(Long.MAX_VALUE))
                 .isEmpty();
     }
+
+    @Test
+    void returnsEmptyListWhenNoTasksExist() {
+        taskJpaRepository.deleteAll();
+
+        assertThat(taskRepository.findAllByIdAscending())
+                .isEmpty();
+    }
+
+    @Test
+    void findsAllTasksInAscendingIdOrder() {
+        taskJpaRepository.deleteAll();
+
+        Task firstSavedTask = taskRepository.save(Task.create(
+                "First collection task",
+                "Verify first representation",
+                Instant.parse("2026-09-23T02:00:00Z")));
+        Task secondSavedTask = taskRepository.save(Task.create(
+                "Second collection task",
+                "Verify second representation",
+                Instant.parse("2026-09-23T02:01:00Z")));
+
+        assertThat(taskRepository.findAllByIdAscending())
+                .containsExactly(firstSavedTask, secondSavedTask);
+    }
 }
