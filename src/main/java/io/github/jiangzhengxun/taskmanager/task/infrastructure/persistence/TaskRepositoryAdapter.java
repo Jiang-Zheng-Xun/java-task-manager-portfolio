@@ -2,6 +2,7 @@ package io.github.jiangzhengxun.taskmanager.task.infrastructure.persistence;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.List;
 
 import org.springframework.stereotype.Repository;
 
@@ -36,5 +37,12 @@ public class TaskRepositoryAdapter implements TaskRepository {
     public Optional<Task> findById(long id) {
         return taskJpaRepository.findById(id)
                 .map(taskMapper::toDomain);
+    }
+
+    @Override
+    public List<Task> findAllByIdAscending() {
+        return taskJpaRepository.findAllByOrderByIdAsc().stream()
+                .map(taskMapper::toDomain)
+                .toList();
     }
 }

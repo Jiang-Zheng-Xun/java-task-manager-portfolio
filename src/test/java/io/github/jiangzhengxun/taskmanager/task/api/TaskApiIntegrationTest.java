@@ -2,12 +2,13 @@ package io.github.jiangzhengxun.taskmanager.task.api;
 
 import java.util.Map;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import org.springframework.jdbc.core.JdbcTemplate;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,7 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -187,6 +188,77 @@ class TaskApiIntegrationTest {
                         .value("Task not found: " + Long.MAX_VALUE))
                 .andExpect(jsonPath("$.path")
                         .value("/api/tasks/" + Long.MAX_VALUE));
+    }
+
+    @Test
+    void returnsEmptyCollectionFromPostgreSql() throws Exception {
+        jdbcTemplate.update("DELETE FROM tasks");
+
+        mockMvc.perform(get("/api/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(content()
+                        .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void returnsCreatedTasksInAscendingIdOrder() throws Exception {
+        jdbcTemplate.update("DELETE FROM tasks");
+
+        MvcResult firstCreateResult = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "First collection task",
+                                  "description": "Verify first API result"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        MvcResult secondCreateResult = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Second collection task",
+                                  "description": "Verify second API result"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        long firstId = objectMapper.readTree(
+                firstCreateResult.getResponse().getContentAsString())
+                .get("id")
+                .asLong();
+        long secondId = objectMapper.readTree(
+                secondCreateResult.getResponse().getContentAsString())
+                .get("id")
+                .asLong();
+
+        assertThat(firstId).isLessThan(secondId);
+
+        mockMvc.perform(get("/api/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(content()
+                        .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id").value(firstId))
+                .andExpect(jsonPath("$[0].title")
+                        .value("First collection task"))
+                .andExpect(jsonPath("$[0].description")
+                        .value("Verify first API result"))
+                .andExpect(jsonPath("$[0].status").value("TODO"))
+                .andExpect(jsonPath("$[0].createdAt").exists())
+                .andExpect(jsonPath("$[0].updatedAt").exists())
+                .andExpect(jsonPath("$[1].id").value(secondId))
+                .andExpect(jsonPath("$[1].title")
+                        .value("Second collection task"))
+                .andExpect(jsonPath("$[1].description")
+                        .value("Verify second API result"))
+                .andExpect(jsonPath("$[1].status").value("TODO"))
+                .andExpect(jsonPath("$[1].createdAt").exists())
+                .andExpect(jsonPath("$[1].updatedAt").exists());
     }
 
     private void assertRejectedWithoutCreatingRow(String requestBody)
