@@ -224,87 +224,73 @@ This request returns `400 Bad Request`. Error responses use a stable public shap
 
 ## List Tasks API
 
-### Endpoint
+### Endpoint and pagination
 
 ```http
-GET /api/tasks
+GET /api/tasks?page=0&size=20
 Accept: application/json
 ```
 
-The endpoint returns `200 OK` with a JSON array of complete Task representations. Results use deterministic ascending Task ID order.
+`page` starts at 0 and defaults to 0. `size` defaults to 20 and must be between 1 and 100. Omitting both parameters returns at most 20 Tasks. Results always use ascending Task ID order; client-controlled sorting, filtering, and search are not supported.
 
-Pagination, client-controlled sorting, filtering, and search are not supported in the current scope.
+A successful response has status `200 OK`, a JSON array of complete Task representations, and the `X-Has-Next-Page` response header (`true` or `false`). The header indicates whether another page existed when this page was queried. Each Task contains `id`, `title`, `description`, `status`, `createdAt`, and `updatedAt`.
 
-### Successful request
-
-With PostgreSQL and the application running, execute:
+For example:
 
 ```bash
 curl --include \
-  http://127.0.0.1:8080/api/tasks
+  'http://127.0.0.1:8080/api/tasks?page=0&size=2'
 ```
 
-Example response:
+With more than two Tasks, the first page has this shape:
 
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/json
+X-Has-Next-Page: true
 ```
 
 ```json
 [
   {
     "id": 1,
-    "title": "Prepare portfolio README",
-    "description": "Add API examples",
+    "title": "First task",
+    "description": null,
     "status": "TODO",
-    "createdAt": "2026-09-23T08:00:00Z",
-    "updatedAt": "2026-09-23T08:00:00Z"
+    "createdAt": "2026-09-24T08:00:00Z",
+    "updatedAt": "2026-09-24T08:00:00Z"
   },
   {
     "id": 2,
-    "title": "Verify collection endpoint",
+    "title": "Second task",
     "description": null,
     "status": "TODO",
-    "createdAt": "2026-09-23T08:05:00Z",
-    "updatedAt": "2026-09-23T08:05:00Z"
+    "createdAt": "2026-09-24T08:01:00Z",
+    "updatedAt": "2026-09-24T08:01:00Z"
   }
 ]
 ```
 
-Generated IDs, timestamps, and stored Task values vary between executions.
+Actual IDs, timestamps, values, and `X-Has-Next-Page` depend on the stored data. Request `page=1&size=2` to read the next page. An empty collection or a page beyond the available data returns `200 OK`, `[]`, and `X-Has-Next-Page: false`.
 
-### Empty collection
+Invalid values, including negative `page`, `size=0`, `size>100`, and non-integer parameters, return a safe `400 Bad Request` response. The API does not provide `totalElements` or `totalPages`.
 
-An empty collection is a successful result and returns:
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-```
-
-```json
-[]
-```
-
-### Collection read-path architecture
+### Read path
 
 ```text
-GET /api/tasks
-→ ListTasksController
-→ ListTasksUseCase
-→ ListTasksService
-→ TaskRepository
-→ TaskRepositoryAdapter
-→ TaskJpaRepository
+GET /api/tasks?page=...&size=...
+→ ListTasksController (validate parameters, map response and header)
+→ ListTasksUseCase / ListTasksService
+→ TaskRepository output port
+→ TaskRepositoryAdapter / ordered JPA Slice
 → PostgreSQL
-→ TaskMapper
-→ List<Task>
-→ List<TaskResponse>
-→ 200 OK
+→ TaskPage(List<Task>, hasNext)
+→ List<TaskResponse> and X-Has-Next-Page
 ```
 
-The persistence adapter retrieves rows in ascending ID order and maps each `TaskEntity` to a domain `Task`. The controller maps the domain collection to API `TaskResponse` objects. An empty repository result flows through the same path and becomes an empty JSON array.
+The persistence query enforces `id ASC` and fetches only a bounded page plus the information needed to determine `hasNext`. The adapter maps JPA entities to domain Tasks before returning to the application layer. The service coordinates the read operation in a read-only transaction; it does not sort the result.
+
+Offset pagination can repeat or skip items if Tasks are inserted or deleted between separate page requests. This prototype does not promise a snapshot across multiple requests. Large page offsets may also be costly; this endpoint is not yet a production-scale pagination design.
 
 ## Get Task by ID API
 

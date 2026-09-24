@@ -1,6 +1,5 @@
 package io.github.jiangzhengxun.taskmanager.task.application.service;
 
-import java.util.List;
 import java.util.Objects;
 
 import org.springframework.stereotype.Service;
@@ -8,7 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.github.jiangzhengxun.taskmanager.task.application.port.in.ListTasksUseCase;
 import io.github.jiangzhengxun.taskmanager.task.application.port.out.TaskRepository;
-import io.github.jiangzhengxun.taskmanager.task.domain.Task;
+import io.github.jiangzhengxun.taskmanager.task.application.model.TaskPage;
 
 @Service
 public class ListTasksService implements ListTasksUseCase {
@@ -23,7 +22,7 @@ public class ListTasksService implements ListTasksUseCase {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Task> listTasks() {
-        return taskRepository.findAllByIdAscending();
+    public TaskPage listTasks(int page, int size) {
+        return taskRepository.findPageByIdAscending(page, size);
     }
 }

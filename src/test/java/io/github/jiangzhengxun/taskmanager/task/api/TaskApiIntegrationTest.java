@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -196,6 +197,7 @@ class TaskApiIntegrationTest {
 
         mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "false"))
                 .andExpect(content()
                         .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(content().json("[]"));
@@ -303,5 +305,90 @@ class TaskApiIntegrationTest {
         }
 
         return count;
+    }
+
+    @Test
+    void pagesCreatedTasksThroughPostgreSql() throws Exception {
+        jdbcTemplate.update("DELETE FROM tasks");
+
+        long[] ids = new long[3];
+        for (int index = 0; index < 3; index++) {
+            MvcResult created = mockMvc.perform(post("/api/tasks")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"title":"Paged task %d"}
+                                    """.formatted(index + 1)))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+
+            ids[index] = objectMapper.readTree(
+                    created.getResponse().getContentAsString())
+                    .get("id").asLong();
+        }
+
+        assertThat(ids[0]).isLessThan(ids[1]);
+        assertThat(ids[1]).isLessThan(ids[2]);
+
+        mockMvc.perform(get("/api/tasks")
+                        .param("page", "0")
+                        .param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "true"))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id").value(ids[0]))
+                .andExpect(jsonPath("$[1].id").value(ids[1]))
+                .andExpect(jsonPath("$[0].title").value("Paged task 1"))
+                .andExpect(jsonPath("$[1].title").value("Paged task 2"));
+
+        mockMvc.perform(get("/api/tasks")
+                    .param("page", "1")
+                    .param("size", "2"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-Has-Next-Page", "false"))
+            .andExpect(jsonPath("$", hasSize(1)))
+            .andExpect(jsonPath("$[0].id").value(ids[2]))
+            .andExpect(jsonPath("$[0].title").value("Paged task 3"));
+
+        mockMvc.perform(get("/api/tasks")
+                        .param("page", "2")
+                        .param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "false"))
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void limitsDefaultCollectionPageToTwentyTasks() throws Exception {
+        jdbcTemplate.update("DELETE FROM tasks");
+
+        for (int index = 0; index < 21; index++) {
+            mockMvc.perform(post("/api/tasks")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"title":"Default page task %d"}
+                                    """.formatted(index + 1)))
+                    .andExpect(status().isCreated());
+        }
+
+        mockMvc.perform(get("/api/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "true"))
+                .andExpect(jsonPath("$", hasSize(20)))
+                .andExpect(jsonPath("$[0].title")
+                        .value("Default page task 1"))
+                .andExpect(jsonPath("$[19].title")
+                        .value("Default page task 20"));
+
+        mockMvc.perform(get("/api/tasks").param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "false"))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title")
+                        .value("Default page task 21"));
+
+        mockMvc.perform(get("/api/tasks").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "false"))
+                .andExpect(jsonPath("$", hasSize(21)));
     }
 }

@@ -78,11 +78,12 @@ class TaskRepositoryAdapterIntegrationTest {
     }
 
     @Test
-    void returnsEmptyListWhenNoTasksExist() {
+    void returnsEmptyPageWhenNoTasksExist() {
         taskJpaRepository.deleteAll();
 
-        assertThat(taskRepository.findAllByIdAscending())
-                .isEmpty();
+        var result = taskRepository.findPageByIdAscending(0, 20);
+        assertThat(result.tasks()).isEmpty();
+        assertThat(result.hasNext()).isFalse();
     }
 
     @Test
@@ -98,7 +99,33 @@ class TaskRepositoryAdapterIntegrationTest {
                 "Verify second representation",
                 Instant.parse("2026-09-23T02:01:00Z")));
 
-        assertThat(taskRepository.findAllByIdAscending())
-                .containsExactly(firstSavedTask, secondSavedTask);
+        var result = taskRepository.findPageByIdAscending(0, 20);
+        assertThat(result.tasks())
+            .containsExactly(firstSavedTask, secondSavedTask);
+        assertThat(result.hasNext()).isFalse();
+    }
+
+    @Test
+    void returnsBoundedPagesInAscendingIdOrderWithHasNext() {
+        taskJpaRepository.deleteAll();
+
+        Task first = taskRepository.save(Task.create(
+                "First task", null, Instant.parse("2026-09-24T01:00:00Z")));
+        Task second = taskRepository.save(Task.create(
+                "Second task", null, Instant.parse("2026-09-24T01:01:00Z")));
+        Task third = taskRepository.save(Task.create(
+                "Third task", null, Instant.parse("2026-09-24T01:02:00Z")));
+
+        var firstPage = taskRepository.findPageByIdAscending(0, 2);
+        assertThat(firstPage.tasks()).containsExactly(first, second);
+        assertThat(firstPage.hasNext()).isTrue();
+
+        var lastPage = taskRepository.findPageByIdAscending(1, 2);
+        assertThat(lastPage.tasks()).containsExactly(third);
+        assertThat(lastPage.hasNext()).isFalse();
+
+        var beyondLastPage = taskRepository.findPageByIdAscending(2, 2);
+        assertThat(beyondLastPage.tasks()).isEmpty();
+        assertThat(beyondLastPage.hasNext()).isFalse();
     }
 }

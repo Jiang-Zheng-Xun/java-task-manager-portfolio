@@ -13,50 +13,39 @@ import org.junit.jupiter.api.Test;
 import io.github.jiangzhengxun.taskmanager.task.application.port.out.TaskRepository;
 import io.github.jiangzhengxun.taskmanager.task.domain.Task;
 import io.github.jiangzhengxun.taskmanager.task.domain.TaskStatus;
+import io.github.jiangzhengxun.taskmanager.task.application.model.TaskPage;
 
 class ListTasksServiceTest {
 
     @Test
-    void returnsTasksInRepositoryOrder() {
-        TaskRepository taskRepository = mock(TaskRepository.class);
-        Task firstTask = new Task(
-                101L,
-                "First collection task",
-                "Verify first result",
-                TaskStatus.TODO,
-                Instant.parse("2026-09-23T02:00:00Z"),
-                Instant.parse("2026-09-23T02:00:00Z"));
-        Task secondTask = new Task(
-                102L,
-                "Second collection task",
-                "Verify second result",
-                TaskStatus.TODO,
-                Instant.parse("2026-09-23T02:01:00Z"),
-                Instant.parse("2026-09-23T02:01:00Z"));
+    void returnsRepositoryPageWithoutSortingAgain() {
+        TaskRepository repository = mock(TaskRepository.class);
+        Task first = new Task(
+                101L, "First", null, TaskStatus.TODO,
+                Instant.parse("2026-09-24T01:00:00Z"),
+                Instant.parse("2026-09-24T01:00:00Z"));
+        Task second = new Task(
+                102L, "Second", null, TaskStatus.TODO,
+                Instant.parse("2026-09-24T01:01:00Z"),
+                Instant.parse("2026-09-24T01:01:00Z"));
+        TaskPage expected = new TaskPage(List.of(first, second), true);
+        when(repository.findPageByIdAscending(0, 2)).thenReturn(expected);
 
-        when(taskRepository.findAllByIdAscending())
-                .thenReturn(List.of(firstTask, secondTask));
+        ListTasksService service = new ListTasksService(repository);
+        TaskPage actual = service.listTasks(0, 2);
 
-        ListTasksService service =
-                new ListTasksService(taskRepository);
-
-        List<Task> result = service.listTasks();
-
-        assertThat(result).containsExactly(firstTask, secondTask);
-        verify(taskRepository).findAllByIdAscending();
+        assertThat(actual).isEqualTo(expected);
+        verify(repository).findPageByIdAscending(0, 2);
     }
 
     @Test
-    void returnsEmptyListWhenRepositoryIsEmpty() {
-        TaskRepository taskRepository = mock(TaskRepository.class);
+    void returnsEmptyPageFromRepository() {
+        TaskRepository repository = mock(TaskRepository.class);
+        TaskPage expected = new TaskPage(List.of(), false);
+        when(repository.findPageByIdAscending(3, 2)).thenReturn(expected);
 
-        when(taskRepository.findAllByIdAscending())
-                .thenReturn(List.of());
-
-        ListTasksService service =
-                new ListTasksService(taskRepository);
-
-        assertThat(service.listTasks()).isEmpty();
-        verify(taskRepository).findAllByIdAscending();
+        ListTasksService service = new ListTasksService(repository);
+        assertThat(service.listTasks(3, 2)).isEqualTo(expected);
+        verify(repository).findPageByIdAscending(3, 2);
     }
 }
