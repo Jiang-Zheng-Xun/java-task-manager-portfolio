@@ -5,9 +5,12 @@ import java.util.Optional;
 import java.util.List;
 
 import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 
 import io.github.jiangzhengxun.taskmanager.task.application.port.out.TaskRepository;
 import io.github.jiangzhengxun.taskmanager.task.domain.Task;
+import io.github.jiangzhengxun.taskmanager.task.application.model.TaskPage;
 
 @Repository
 public class TaskRepositoryAdapter implements TaskRepository {
@@ -40,9 +43,24 @@ public class TaskRepositoryAdapter implements TaskRepository {
     }
 
     @Override
-    public List<Task> findAllByIdAscending() {
-        return taskJpaRepository.findAllByOrderByIdAsc().stream()
+    public TaskPage findPageByIdAscending(int page, int size) {
+        if (page < 0 || size < 1 || size > 100) {
+            throw new IllegalArgumentException("Invalid pagination parameters");
+        }
+
+        // JPA's row offset must fit an int. A larger offset cannot contain
+        // any page supported by this persistence query.
+        if ((long) page * size > Integer.MAX_VALUE) {
+            return new TaskPage(List.of(), false);
+        }
+
+        Slice<TaskEntity> entities = taskJpaRepository
+                .findAllByOrderByIdAsc(PageRequest.of(page, size));
+
+        List<Task> tasks = entities.getContent().stream()
                 .map(taskMapper::toDomain)
                 .toList();
+
+        return new TaskPage(tasks, entities.hasNext());
     }
 }

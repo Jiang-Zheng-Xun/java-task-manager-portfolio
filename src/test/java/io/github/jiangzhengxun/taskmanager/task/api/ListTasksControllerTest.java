@@ -7,11 +7,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import java.time.Instant;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+import static org.mockito.Mockito.verifyNoInteractions;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -21,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import io.github.jiangzhengxun.taskmanager.task.application.port.in.ListTasksUseCase;
 import io.github.jiangzhengxun.taskmanager.task.domain.Task;
 import io.github.jiangzhengxun.taskmanager.task.domain.TaskStatus;
+import io.github.jiangzhengxun.taskmanager.task.application.model.TaskPage;
 
 @WebMvcTest(ListTasksController.class)
 class ListTasksControllerTest {
@@ -48,11 +55,12 @@ class ListTasksControllerTest {
                 Instant.parse("2026-09-23T02:01:00Z"),
                 Instant.parse("2026-09-23T02:01:00Z"));
 
-        when(listTasksUseCase.listTasks())
-                .thenReturn(List.of(firstTask, secondTask));
+        when(listTasksUseCase.listTasks(0, 20))
+            .thenReturn(new TaskPage(List.of(firstTask, secondTask), false));
 
         mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "false"))
                 .andExpect(content()
                         .contentTypeCompatibleWith(
                                 MediaType.APPLICATION_JSON))
@@ -80,11 +88,12 @@ class ListTasksControllerTest {
 
     @Test
     void returnsEmptyArrayWhenNoTasksExist() throws Exception {
-        when(listTasksUseCase.listTasks())
-                .thenReturn(List.of());
+        when(listTasksUseCase.listTasks(0, 20))
+            .thenReturn(new TaskPage(List.of(), false));
 
         mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("X-Has-Next-Page", "false"))
                 .andExpect(content()
                         .contentTypeCompatibleWith(
                                 MediaType.APPLICATION_JSON))
@@ -93,7 +102,7 @@ class ListTasksControllerTest {
 
     @Test
     void hidesInternalDetailsForUnexpectedFailure() throws Exception {
-        when(listTasksUseCase.listTasks())
+        when(listTasksUseCase.listTasks(0, 20))
                 .thenThrow(new RuntimeException(
                         "password=secret jdbc:postgresql://internal-db/tasks"));
 
@@ -115,5 +124,52 @@ class ListTasksControllerTest {
                                 "jdbc:postgresql"))))
                 .andExpect(jsonPath("$.path")
                         .value("/api/tasks"));
+    }
+
+    @Test
+    void returnsRequestedPageWithHasNextHeader() throws Exception {
+        Task task = new Task(
+                103L,
+                "Third collection task",
+                null,
+                TaskStatus.TODO,
+                Instant.parse("2026-09-24T02:00:00Z"),
+                Instant.parse("2026-09-24T02:00:00Z"));
+
+        when(listTasksUseCase.listTasks(1, 2))
+                .thenReturn(new TaskPage(List.of(task), true));
+
+        mockMvc.perform(get("/api/tasks")
+                        .param("page", "1")
+                        .param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result
+                        .MockMvcResultMatchers.header()
+                        .string("X-Has-Next-Page", "true"))
+                .andExpect(content()
+                    .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(103))
+                .andExpect(jsonPath("$[1]").doesNotExist());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "page, -1",
+            "size, 0",
+            "size, 101",
+            "page, abc",
+            "size, abc"
+    })
+    void rejectsInvalidPaginationParameters(
+            String parameterName,
+            String parameterValue) throws Exception {
+        mockMvc.perform(get("/api/tasks")
+                        .param(parameterName, parameterValue))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.path").value("/api/tasks"))
+                .andExpect(jsonPath("$.message").exists());
+
+        verifyNoInteractions(listTasksUseCase);
     }
 }

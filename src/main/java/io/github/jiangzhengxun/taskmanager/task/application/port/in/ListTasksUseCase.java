@@ -1,10 +1,8 @@
 package io.github.jiangzhengxun.taskmanager.task.application.port.in;
 
-import java.util.List;
-
-import io.github.jiangzhengxun.taskmanager.task.domain.Task;
+import io.github.jiangzhengxun.taskmanager.task.application.model.TaskPage;
 
 public interface ListTasksUseCase {
 
-    List<Task> listTasks();
+    TaskPage listTasks(int page, int size);
 }
