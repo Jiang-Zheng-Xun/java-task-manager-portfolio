@@ -18,7 +18,7 @@ The current prototype provides executable Task creation and read vertical slices
 - Flyway database migration
 - Maven and GitHub Actions verification
 
-The server initializes every new Task with status `TODO`. Collection results use deterministic ascending Task ID order. Pagination, client-controlled sorting, filtering, search, update, completion, deletion, authentication, and deployment remain outside the current scope.
+The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. The API also supports updating a Task's status. Client-controlled sorting, filtering, search, title/description updates, deletion, authentication, and deployment remain outside the current scope.
 
 ## Technology baseline
 
@@ -369,6 +369,31 @@ GET /api/tasks/{id}
 `TaskNotFoundException` represents a missing resource in the
 application layer. `GlobalExceptionHandler` maps that application
 meaning to `404 Not Found` at the HTTP boundary.
+
+## Update Task Status API
+
+### Endpoint and request
+
+```http
+PATCH /api/tasks/{id}/status
+Content-Type: application/json
+```
+
+```json
+{"status":"IN_PROGRESS"}
+```
+
+Accepted statuses are `TODO`, `IN_PROGRESS`, and `COMPLETED`.
+
+### Response and errors
+
+A successful request returns `200 OK` with the complete Task representation. An actual status change preserves `id`, `title`, `description`, and `createdAt`, and updates `updatedAt`. Repeating the current status leaves the stored Task and `updatedAt` unchanged.
+
+A non-positive or non-integer ID, missing or invalid status, malformed JSON, or unknown request field returns a safe `400 Bad Request`. A well-formed ID with no matching Task returns `404 Not Found`.
+
+### Scope and method choice
+
+This endpoint uses `PATCH` because it updates only `status`. A future `PUT` endpoint would need a separate contract for replacing the complete set of editable Task fields. This API does not support changing `title` or `description`.
 
 ## Database migration
 

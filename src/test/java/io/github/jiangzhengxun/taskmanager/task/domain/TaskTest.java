@@ -64,4 +64,47 @@ class TaskTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("description must not exceed 2000 characters");
     }
+
+    @Test
+    void changingStatusPreservesIdentityAndCreationTime() {
+        Task original = new Task(
+                7L,
+                "Prepare README",
+                "Check examples",
+                TaskStatus.TODO,
+                NOW,
+                NOW
+        );
+        Instant later = NOW.plusSeconds(60);
+
+        Task changed = original.withStatus(TaskStatus.IN_PROGRESS, later);
+
+        assertThat(changed.id()).isEqualTo(7L);
+        assertThat(changed.title()).isEqualTo("Prepare README");
+        assertThat(changed.description()).isEqualTo("Check examples");
+        assertThat(changed.status()).isEqualTo(TaskStatus.IN_PROGRESS);
+        assertThat(changed.createdAt()).isEqualTo(NOW);
+        assertThat(changed.updatedAt()).isEqualTo(later);
+        assertThat(original.status()).isEqualTo(TaskStatus.TODO);
+    }
+
+    @Test
+    void repeatingSameStatusPreservesUpdatedAt() {
+        Task original = new Task(
+                7L,
+                "Prepare README",
+                null,
+                TaskStatus.IN_PROGRESS,
+                NOW,
+                NOW
+        );
+
+        Task repeated = original.withStatus(
+                TaskStatus.IN_PROGRESS,
+                NOW.plusSeconds(60)
+        );
+
+        assertThat(repeated).isSameAs(original);
+        assertThat(repeated.updatedAt()).isEqualTo(NOW);
+    }
 }

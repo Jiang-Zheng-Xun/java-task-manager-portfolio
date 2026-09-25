@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 
+import jakarta.persistence.EntityManager;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -25,6 +27,9 @@ class TaskRepositoryAdapterIntegrationTest {
 
     @Autowired
     private TaskJpaRepository taskJpaRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     void savesTaskAndReturnsDatabaseGeneratedId() {
@@ -127,5 +132,29 @@ class TaskRepositoryAdapterIntegrationTest {
         var beyondLastPage = taskRepository.findPageByIdAscending(2, 2);
         assertThat(beyondLastPage.tasks()).isEmpty();
         assertThat(beyondLastPage.hasNext()).isFalse();
+    }
+
+    @Test
+    void updatesExistingTaskStatusWithoutChangingIdentityOrCreationTime() {
+        Instant createdAt = Instant.parse("2026-09-25T01:00:00Z");
+        Instant changedAt = createdAt.plusSeconds(60);
+        Task original = taskRepository.save(
+                Task.create("Status update", null, createdAt));
+
+        Task changed = taskRepository.save(
+                original.withStatus(TaskStatus.IN_PROGRESS, changedAt));
+
+        taskJpaRepository.flush();
+        entityManager.clear();
+
+        TaskEntity persisted = taskJpaRepository.findById(original.id())
+            .orElseThrow();
+
+        assertThat(changed.id()).isEqualTo(original.id());
+        assertThat(persisted.getId()).isEqualTo(original.id());
+        assertThat(persisted.getTitle()).isEqualTo("Status update");
+        assertThat(persisted.getStatus()).isEqualTo(TaskStatus.IN_PROGRESS);
+        assertThat(persisted.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(persisted.getUpdatedAt()).isEqualTo(changedAt);
     }
 }
