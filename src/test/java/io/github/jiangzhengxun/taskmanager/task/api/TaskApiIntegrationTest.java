@@ -1,6 +1,11 @@
 package io.github.jiangzhengxun.taskmanager.task.api;
 
 import java.util.Map;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.Duration;
+
+import jakarta.persistence.EntityManager;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -10,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,6 +46,9 @@ class TaskApiIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     void createsTaskAndPersistsItInPostgreSql() throws Exception {
@@ -390,5 +399,62 @@ class TaskApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Has-Next-Page", "false"))
                 .andExpect(jsonPath("$", hasSize(21)));
+    }
+
+    @Test
+    void updatesStatusThroughHttpAndPostgreSqlWithoutChangingTimestampOnReplay()
+            throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Update status path\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode createdBody = objectMapper.readTree(
+                created.getResponse().getContentAsString());
+        long id = createdBody.get("id").asLong();
+        String createdAt = createdBody.get("createdAt").asText();
+
+        MvcResult changed = mockMvc.perform(
+                        patch("/api/tasks/{id}/status", id)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.createdAt").value(createdAt))
+                .andReturn();
+
+        String updatedAt = objectMapper.readTree(
+                changed.getResponse().getContentAsString())
+                .get("updatedAt").asText();
+
+        entityManager.flush();
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT status FROM tasks WHERE id = ?",
+    String.class, id)).isEqualTo("IN_PROGRESS");
+
+        Instant storedUpdatedAt = jdbcTemplate.queryForObject(
+            "SELECT updated_at FROM tasks WHERE id = ?",
+    Timestamp.class, id).toInstant();
+        assertThat(Duration.between(
+                storedUpdatedAt, Instant.parse(updatedAt)).abs())
+                .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+
+        mockMvc.perform(patch("/api/tasks/{id}/status", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").value(updatedAt));
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT status FROM tasks WHERE id = ?",
+    String.class, id)).isEqualTo("IN_PROGRESS");
+
+        Instant storedAfterReplay = jdbcTemplate.queryForObject(
+            "SELECT updated_at FROM tasks WHERE id = ?",
+    Timestamp.class, id).toInstant();
+        assertThat(storedAfterReplay).isEqualTo(storedUpdatedAt);
     }
 }

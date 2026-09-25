@@ -43,6 +43,24 @@ public record Task(
         );
     }
 
+    public Task withStatus(TaskStatus newStatus, Instant now) {
+        Objects.requireNonNull(newStatus, "status must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+
+        if (status == newStatus) {
+            return this;
+        }
+
+        return new Task(
+                id,
+                title,
+                description,
+                newStatus,
+                createdAt,
+                now
+        );
+    }
+
     private static String normalizeTitle(String title) {
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException(
