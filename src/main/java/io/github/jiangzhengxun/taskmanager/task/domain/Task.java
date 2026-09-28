@@ -61,6 +61,33 @@ public record Task(
         );
     }
 
+    public Task replaceEditableFields(
+            String newTitle,
+            String newDescription,
+            TaskStatus newStatus,
+            Instant now) {
+        Objects.requireNonNull(newStatus, "status must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+
+        String normalizedTitle = normalizeTitle(newTitle);
+        String normalizedDescription = normalizeDescription(newDescription);
+
+        if (title.equals(normalizedTitle)
+                && Objects.equals(description, normalizedDescription)
+                && status == newStatus) {
+            return this;
+        }
+
+        return new Task(
+                id,
+                normalizedTitle,
+                normalizedDescription,
+                newStatus,
+                createdAt,
+                now
+        );
+    }
+
     private static String normalizeTitle(String title) {
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException(

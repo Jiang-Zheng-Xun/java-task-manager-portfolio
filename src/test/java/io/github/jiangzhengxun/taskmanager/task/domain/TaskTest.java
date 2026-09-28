@@ -107,4 +107,52 @@ class TaskTest {
         assertThat(repeated).isSameAs(original);
         assertThat(repeated.updatedAt()).isEqualTo(NOW);
     }
+
+    @Test
+    void replacingEditableFieldsPreservesIdentityAndCreationTime() {
+        Task original = new Task(
+                7L, "Original title", "Original description",
+                TaskStatus.TODO, NOW, NOW);
+        Instant later = NOW.plusSeconds(60);
+
+        Task replaced = original.replaceEditableFields(
+                "  New title  ", null, TaskStatus.COMPLETED, later);
+
+        assertThat(replaced.id()).isEqualTo(7L);
+        assertThat(replaced.title()).isEqualTo("New title");
+        assertThat(replaced.description()).isNull();
+        assertThat(replaced.status()).isEqualTo(TaskStatus.COMPLETED);
+        assertThat(replaced.createdAt()).isEqualTo(NOW);
+        assertThat(replaced.updatedAt()).isEqualTo(later);
+        assertThat(original.title()).isEqualTo("Original title");
+        assertThat(original.status()).isEqualTo(TaskStatus.TODO);
+    }
+
+    @Test
+    void replacingWithSameEditableFieldsPreservesInstanceAndUpdatedAt() {
+        Task original = new Task(
+                7L, "Task title", "Description",
+                TaskStatus.IN_PROGRESS, NOW, NOW);
+
+        Task replaced = original.replaceEditableFields(
+                "Task title", "Description", TaskStatus.IN_PROGRESS,
+                NOW.plusSeconds(60));
+
+        assertThat(replaced).isSameAs(original);
+        assertThat(replaced.updatedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void normalizedEquivalentReplacementPreservesInstanceAndUpdatedAt() {
+        Task original = new Task(
+                7L, "Task title", "Description",
+                TaskStatus.COMPLETED, NOW, NOW);
+
+        Task replaced = original.replaceEditableFields(
+                "  Task title  ", "  Description  ",
+                TaskStatus.COMPLETED, NOW.plusSeconds(60));
+
+        assertThat(replaced).isSameAs(original);
+        assertThat(replaced.updatedAt()).isEqualTo(NOW);
+    }
 }
