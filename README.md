@@ -4,11 +4,13 @@ A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, M
 
 ## Current scope
 
-The current prototype provides executable Task creation and read vertical slices:
+The current prototype provides executable Task creation, read, and update vertical slices:
 
 - `POST /api/tasks`
 - `GET /api/tasks`
 - `GET /api/tasks/{id}`
+- `PATCH /api/tasks/{id}/status`
+- `PUT /api/tasks/{id}`
 - Request validation and strict rejection of unsupported fields
 - Domain-level creation and lookup rules
 - PostgreSQL persistence with a database-generated ID
@@ -18,7 +20,7 @@ The current prototype provides executable Task creation and read vertical slices
 - Flyway database migration
 - Maven and GitHub Actions verification
 
-The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. The API also supports updating a Task's status. Client-controlled sorting, filtering, search, title/description updates, deletion, authentication, and deployment remain outside the current scope.
+The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. PATCH updates only a Task's status; PUT replaces its editable title, description, and status. Client-controlled sorting, filtering, search, deletion, authentication, and deployment remain outside the current scope.
 
 ## Technology baseline
 
@@ -108,7 +110,7 @@ A successful startup includes:
 Started JavaTaskManagerPortfolioApplication
 ```
 
-The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, and `GET /api/tasks/{id}`; the root path is not an application endpoint.
+The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/{id}`, `PATCH /api/tasks/{id}/status`, and `PUT /api/tasks/{id}`; the root path is not an application endpoint.
 
 Stop the application with `Ctrl+C`.
 
@@ -393,7 +395,52 @@ A non-positive or non-integer ID, missing or invalid status, malformed JSON, or 
 
 ### Scope and method choice
 
-This endpoint uses `PATCH` because it updates only `status`. A future `PUT` endpoint would need a separate contract for replacing the complete set of editable Task fields. This API does not support changing `title` or `description`.
+This endpoint uses `PATCH` because it updates only `status`; it does not change `title` or `description`. For full replacement of all editable Task fields, use `PUT /api/tasks/{id}` under the contract below.
+
+## Replace Task API
+
+### Endpoint and complete editable representation
+
+```http
+PUT /api/tasks/{id}
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Prepare release notes",
+  "description": null,
+  "status": "COMPLETED"
+}
+```
+
+The request must include all three editable fields: `title`, `description`, and
+`status`. `description: null` clears the description; a blank description
+normalizes to null. Omitting any field is invalid. The server controls `id`,
+`createdAt`, and `updatedAt`; supplying them or any unknown field is rejected.
+
+The existing title normalization and length rules apply. Status must be
+`TODO`, `IN_PROGRESS`, or `COMPLETED`; the existing transition rules allow
+direct completion and reopening.
+
+### Response and errors
+
+A successful replacement returns `200 OK` with the complete Task
+representation. A changed Task keeps its `id` and `createdAt` and receives a
+new `updatedAt`. Repeating an equivalent representation after normalization
+preserves `updatedAt` and skips an unnecessary save.
+
+Invalid IDs or requests return a safe `400 Bad Request`; a valid positive ID
+without a matching Task returns a safe `404 Not Found`. Unexpected failures
+return a safe `500 Internal Server Error`. Invalid requests do not change the
+stored Task.
+
+### PUT and PATCH
+
+`PUT /api/tasks/{id}` replaces the complete set of editable fields under the
+contract above. `PATCH /api/tasks/{id}/status` changes only status and leaves
+title and description untouched. Both use the same existing status values and
+preserve `updatedAt` when the normalized resource state is unchanged.
 
 ## Database migration
 

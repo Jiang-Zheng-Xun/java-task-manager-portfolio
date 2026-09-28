@@ -157,4 +157,29 @@ class TaskRepositoryAdapterIntegrationTest {
         assertThat(persisted.getCreatedAt()).isEqualTo(createdAt);
         assertThat(persisted.getUpdatedAt()).isEqualTo(changedAt);
     }
+
+    @Test
+    void replacesEditableFieldsAndReloadsFromPostgreSql() {
+        Instant createdAt = Instant.parse("2026-09-28T01:00:00Z");
+        Instant replacedAt = createdAt.plusSeconds(60);
+        Task original = taskRepository.save(Task.create(
+                "Original title", "Original description", createdAt));
+
+        Task replacement = original.replaceEditableFields(
+                "Replaced title", null, TaskStatus.COMPLETED, replacedAt);
+        Task saved = taskRepository.save(replacement);
+
+        taskJpaRepository.flush();
+        entityManager.clear();
+
+        Task reloaded = taskRepository.findById(original.id()).orElseThrow();
+
+        assertThat(saved.id()).isEqualTo(original.id());
+        assertThat(reloaded.id()).isEqualTo(original.id());
+        assertThat(reloaded.title()).isEqualTo("Replaced title");
+        assertThat(reloaded.description()).isNull();
+        assertThat(reloaded.status()).isEqualTo(TaskStatus.COMPLETED);
+        assertThat(reloaded.createdAt()).isEqualTo(createdAt);
+        assertThat(reloaded.updatedAt()).isEqualTo(replacedAt);
+    }
 }

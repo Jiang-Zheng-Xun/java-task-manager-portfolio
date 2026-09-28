@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -456,5 +457,122 @@ class TaskApiIntegrationTest {
             "SELECT updated_at FROM tasks WHERE id = ?",
     Timestamp.class, id).toInstant();
         assertThat(storedAfterReplay).isEqualTo(storedUpdatedAt);
+    }
+
+    @Test
+    void replacesTaskThroughHttpAndPostgreSqlAndPreservesTimestampOnReplay()
+            throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Original","description":"Before"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode createdBody = objectMapper.readTree(
+                created.getResponse().getContentAsString());
+        long id = createdBody.get("id").asLong();
+        String createdAt = createdBody.get("createdAt").asText();
+
+        String replacement = """
+                {"title":"Replaced","description":null,"status":"COMPLETED"}
+                """;
+
+        entityManager.flush();
+        Instant storedCreatedAtBeforePut = jdbcTemplate.queryForObject(
+        "SELECT created_at FROM tasks WHERE id = ?",
+        Timestamp.class, id).toInstant();
+
+        MvcResult updated = mockMvc.perform(put("/api/tasks/{id}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(replacement))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.title").value("Replaced"))
+                .andExpect(jsonPath("$.description")
+                        .value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.createdAt").value(createdAt))
+                .andReturn();
+
+        String updatedAt = objectMapper.readTree(
+                updated.getResponse().getContentAsString())
+                .get("updatedAt").asText();
+
+        entityManager.flush();
+
+        Map<String, Object> stored = jdbcTemplate.queryForMap(
+                """
+                SELECT title, description, status, created_at, updated_at
+                FROM tasks WHERE id = ?
+                """,
+                id);
+        assertThat(stored.get("title")).isEqualTo("Replaced");
+        assertThat(stored.get("description")).isNull();
+        assertThat(stored.get("status")).isEqualTo("COMPLETED");
+        Instant storedCreatedAtAfterPut =
+        ((Timestamp) stored.get("created_at")).toInstant();
+
+        assertThat(storedCreatedAtAfterPut)
+            .isEqualTo(storedCreatedAtBeforePut);
+        assertThat(Duration.between(
+            storedCreatedAtAfterPut, Instant.parse(createdAt)).abs())
+            .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+
+        Instant storedUpdatedAt =
+                ((Timestamp) stored.get("updated_at")).toInstant();
+        assertThat(Duration.between(
+                storedUpdatedAt, Instant.parse(updatedAt)).abs())
+                .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+
+        mockMvc.perform(put("/api/tasks/{id}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(replacement))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").value(updatedAt));
+
+        entityManager.flush();
+        Instant afterReplay = jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM tasks WHERE id = ?",
+                Timestamp.class, id).toInstant();
+        assertThat(afterReplay).isEqualTo(storedUpdatedAt);
+
+        mockMvc.perform(get("/api/tasks/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Replaced"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
+    void invalidPutDoesNotChangeStoredTask() throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Unchanged","description":"Keep"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long id = objectMapper.readTree(
+                created.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        entityManager.flush();
+        Map<String, Object> before = jdbcTemplate.queryForMap(
+                "SELECT title, description, status, updated_at FROM tasks WHERE id = ?",
+                id);
+
+        mockMvc.perform(put("/api/tasks/{id}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Should not replace","status":"COMPLETED"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        entityManager.flush();
+        Map<String, Object> after = jdbcTemplate.queryForMap(
+                "SELECT title, description, status, updated_at FROM tasks WHERE id = ?",
+                id);
+        assertThat(after).isEqualTo(before);
     }
 }
