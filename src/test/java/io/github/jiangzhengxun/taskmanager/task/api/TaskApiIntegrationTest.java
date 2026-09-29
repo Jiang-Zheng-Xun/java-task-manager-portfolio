@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -574,5 +576,90 @@ class TaskApiIntegrationTest {
                 "SELECT title, description, status, updated_at FROM tasks WHERE id = ?",
                 id);
         assertThat(after).isEqualTo(before);
+    }
+
+    @Test
+    void deletesTaskThroughHttpAndRemovesItFromCollection() throws Exception {
+        jdbcTemplate.update("DELETE FROM tasks");
+
+        MvcResult first = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Delete this task\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long deletedId = objectMapper.readTree(
+                first.getResponse().getContentAsString()).get("id").asLong();
+
+        MvcResult second = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Keep this task\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long keptId = objectMapper.readTree(
+                second.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(delete("/api/tasks/{id}", deletedId))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tasks WHERE id = ?",
+                Long.class, deletedId)).isZero();
+
+        mockMvc.perform(get("/api/tasks/{id}", deletedId))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tasks/{id}", keptId))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id").value(keptId));
+
+        mockMvc.perform(delete("/api/tasks/{id}", deletedId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404));
+
+        mockMvc.perform(delete("/api/tasks/{id}", 0))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tasks WHERE id = ?",
+                Long.class, keptId)).isEqualTo(1L);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void deleteIsVisibleAfterCommitToIndependentJdbcRead() throws Exception {
+        long id = 0L;
+        try {
+            MvcResult created = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Observe committed delete\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+            id = objectMapper.readTree(
+                    created.getResponse().getContentAsString())
+                    .get("id").asLong();
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM tasks WHERE id = ?",
+                    Long.class, id)).isEqualTo(1L);
+
+            mockMvc.perform(delete("/api/tasks/{id}", id))
+                    .andExpect(status().isNoContent())
+                    .andExpect(content().string(""));
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM tasks WHERE id = ?",
+                    Long.class, id)).isZero();
+            mockMvc.perform(get("/api/tasks/{id}", id))
+                    .andExpect(status().isNotFound());
+        } finally {
+            if (id > 0) {
+                jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", id);
+            }
+        }
     }
 }

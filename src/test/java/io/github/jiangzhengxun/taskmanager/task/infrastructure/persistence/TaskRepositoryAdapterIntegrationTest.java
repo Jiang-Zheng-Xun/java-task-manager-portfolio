@@ -182,4 +182,27 @@ class TaskRepositoryAdapterIntegrationTest {
         assertThat(reloaded.createdAt()).isEqualTo(createdAt);
         assertThat(reloaded.updatedAt()).isEqualTo(replacedAt);
     }
+
+    @Test
+    void deletesExistingTaskWithoutDeletingAnotherTask() {
+        Task toDelete = taskRepository.save(Task.create(
+                "Delete this task", null,
+                Instant.parse("2026-09-29T01:00:00Z")));
+        Task toKeep = taskRepository.save(Task.create(
+                "Keep this task", null,
+                Instant.parse("2026-09-29T01:01:00Z")));
+
+        assertThat(taskRepository.deleteById(toDelete.id())).isTrue();
+
+        taskJpaRepository.flush();
+        entityManager.clear();
+
+        assertThat(taskRepository.findById(toDelete.id())).isEmpty();
+        assertThat(taskRepository.findById(toKeep.id())).contains(toKeep);
+    }
+
+    @Test
+    void reportsFalseWhenDeletingMissingTask() {
+        assertThat(taskRepository.deleteById(Long.MAX_VALUE)).isFalse();
+    }
 }
