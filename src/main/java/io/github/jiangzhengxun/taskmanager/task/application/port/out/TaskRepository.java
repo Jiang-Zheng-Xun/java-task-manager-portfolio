@@ -11,5 +11,7 @@ public interface TaskRepository {
 
     Optional<Task> findById(long id);
 
+    boolean deleteById(long id);
+
     TaskPage findPageByIdAscending(int page, int size);
 }

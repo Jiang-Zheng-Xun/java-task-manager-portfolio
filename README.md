@@ -11,6 +11,7 @@ The current prototype provides executable Task creation, read, and update vertic
 - `GET /api/tasks/{id}`
 - `PATCH /api/tasks/{id}/status`
 - `PUT /api/tasks/{id}`
+- `DELETE /api/tasks/{id}`
 - Request validation and strict rejection of unsupported fields
 - Domain-level creation and lookup rules
 - PostgreSQL persistence with a database-generated ID
@@ -20,7 +21,7 @@ The current prototype provides executable Task creation, read, and update vertic
 - Flyway database migration
 - Maven and GitHub Actions verification
 
-The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. PATCH updates only a Task's status; PUT replaces its editable title, description, and status. Client-controlled sorting, filtering, search, deletion, authentication, and deployment remain outside the current scope.
+The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. PATCH updates only a Task's status; PUT replaces its editable title, description, and status. Client-controlled sorting, filtering, search, authentication, and deployment remain outside the current scope.
 
 ## Technology baseline
 
@@ -110,7 +111,7 @@ A successful startup includes:
 Started JavaTaskManagerPortfolioApplication
 ```
 
-The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/{id}`, `PATCH /api/tasks/{id}/status`, and `PUT /api/tasks/{id}`; the root path is not an application endpoint.
+The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/{id}`, `PATCH /api/tasks/{id}/status`, `PUT /api/tasks/{id}`, and `DELETE /api/tasks/{id}`; the root path is not an application endpoint.
 
 Stop the application with `Ctrl+C`.
 
@@ -437,10 +438,28 @@ stored Task.
 
 ### PUT and PATCH
 
-`PUT /api/tasks/{id}` replaces the complete set of editable fields under the
-contract above. `PATCH /api/tasks/{id}/status` changes only status and leaves
-title and description untouched. Both use the same existing status values and
-preserve `updatedAt` when the normalized resource state is unchanged.
+`PUT /api/tasks/{id}` replaces the complete set of editable fields under the contract above. `PATCH /api/tasks/{id}/status` changes only status and leaves title and description untouched. Both use the same existing status values and preserve `updatedAt` when the normalized resource state is unchanged.
+
+## Delete Task API
+
+### Endpoint
+
+```http
+DELETE /api/tasks/{id}
+```
+
+The ID must be a positive integer within the Java `long` range. Deleting an existing Task physically removes it and returns `204 No Content` with an empty response body.
+
+```bash
+curl --include --request DELETE \
+  http://127.0.0.1:8080/api/tasks/1
+```
+
+A subsequent `GET /api/tasks/1` returns `404 Not Found`, and collection results no longer include the deleted Task. Deleting that ID again, or deleting another valid ID that does not exist, returns a safe `404`. Zero, negative, nonnumeric, and out-of-range IDs return a safe `400`. Unexpected failures return a safe `500` without exposing internal details.
+
+Repeated deletion leaves the resource absent even though the second
+response is `404`. The endpoint does not implement soft deletion or
+batch deletion.
 
 ## Database migration
 

@@ -43,6 +43,16 @@ public class TaskRepositoryAdapter implements TaskRepository {
     }
 
     @Override
+    public boolean deleteById(long id) {
+        return taskJpaRepository.findById(id)
+                .map(entity -> {
+                    taskJpaRepository.delete(entity);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    @Override
     public TaskPage findPageByIdAscending(int page, int size) {
         if (page < 0 || size < 1 || size > 100) {
             throw new IllegalArgumentException("Invalid pagination parameters");
