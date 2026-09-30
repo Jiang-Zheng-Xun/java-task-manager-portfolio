@@ -461,15 +461,19 @@ Repeated deletion leaves the resource absent even though the second
 response is `404`. The endpoint does not implement soft deletion or
 batch deletion.
 
-## Database migration
+## Database schema and reliability
 
-Flyway automatically applies migrations from:
+Flyway applies versioned migrations from:
 
 ```text
 src/main/resources/db/migration
 ```
 
-The initial migration creates the `tasks` table and its baseline constraints.
+`V1__create_tasks_table.sql` creates the `tasks` table. The database generates its primary-key `id`. It limits `title` to 200 characters and requires a non-null, non-blank title; `description` is nullable and limited to 2000 characters. `status` is non-null and limited to `TODO`, `IN_PROGRESS`, or `COMPLETED`. Both timestamps are non-null. JPA uses `ddl-auto: validate`, so it checks the mapped schema rather than creating or updating tables.
+
+The ID primary key provides a unique B-tree index. The implemented list query orders bounded pages by ascending ID; there is currently no status- or timestamp-filtered query requiring another index. No additional migration or index was needed for this reliability review.
+
+`TaskDatabaseConstraintIntegrationTest` writes directly through JDBC to PostgreSQL. It verifies a valid row at the title and description length limits, and checks that PostgreSQL rejects blank or null titles, invalid or null statuses, null timestamps, and values exceeding column lengths. These tests exercise database enforcement independently of HTTP request validation and domain normalization. The successful test deletes its own row; rejected inserts do not leave rows behind.
 
 ## Continuous integration
 
