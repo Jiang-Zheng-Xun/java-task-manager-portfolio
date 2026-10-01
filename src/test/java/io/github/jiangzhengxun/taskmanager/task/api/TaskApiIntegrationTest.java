@@ -662,4 +662,77 @@ class TaskApiIntegrationTest {
             }
         }
     }
+
+    @Test
+    void unsupportedMethodReturnsSafe405WithAllowInFullContext()
+            throws Exception {
+        long countBefore = taskCount();
+
+        MvcResult result = mockMvc.perform(put("/api/tasks")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string(
+                        "Allow", org.hamcrest.Matchers.containsString("GET")))
+                .andExpect(header().string(
+                        "Allow", org.hamcrest.Matchers.containsString("POST")))
+                .andExpect(content()
+                        .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.status").value(405))
+                .andExpect(jsonPath("$.error").value("Method Not Allowed"))
+                .andExpect(jsonPath("$.message")
+                        .value("HTTP method is not supported"))
+                .andExpect(jsonPath("$.path").value("/api/tasks"))
+                .andReturn();
+
+        assertThat(taskCount()).isEqualTo(countBefore);
+        assertSafeProtocolErrorBody(result);
+    }
+
+    @Test
+    void unsupportedContentTypeReturnsSafe415WithoutCreatingRow()
+            throws Exception {
+        long countBefore = taskCount();
+
+        MvcResult result = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .content("unsupported request body"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(content()
+                        .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.status").value(415))
+                .andExpect(jsonPath("$.error").value("Unsupported Media Type"))
+                .andExpect(jsonPath("$.message")
+                        .value("Request Content-Type is not supported"))
+                .andExpect(jsonPath("$.path").value("/api/tasks"))
+                .andReturn();
+
+        assertThat(taskCount()).isEqualTo(countBefore);
+        assertSafeProtocolErrorBody(result);
+    }
+
+    @Test
+    void unacceptableXmlResponseReturnsEmpty406InFullContext()
+            throws Exception {
+        mockMvc.perform(get("/api/tasks")
+                        .accept(MediaType.APPLICATION_XML))
+                .andExpect(status().isNotAcceptable())
+                .andExpect(content().string(""));
+    }
+
+    private void assertSafeProtocolErrorBody(MvcResult result)
+            throws Exception {
+        String body = result.getResponse().getContentAsString();
+
+        assertThat(objectMapper.readTree(body).size()).isEqualTo(5);
+        assertThat(body).doesNotContain(
+                "org.springframework",
+                "org.hibernate",
+                "jdbc:",
+                "postgresql://",
+                "password",
+                "stackTrace");
+    }
 }
