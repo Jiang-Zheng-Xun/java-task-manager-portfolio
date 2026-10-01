@@ -15,8 +15,9 @@ The current prototype provides executable Task creation, read, and update vertic
 - Request validation and strict rejection of unsupported fields
 - Domain-level creation and lookup rules
 - PostgreSQL persistence with a database-generated ID
-- Safe `400 Bad Request`, `404 Not Found`, and
-  `500 Internal Server Error` responses
+- Safe JSON errors for `400 Bad Request`, `404 Not Found`,
+  `405 Method Not Allowed`, `415 Unsupported Media Type`, and
+  `500 Internal Server Error`; empty `406 Not Acceptable` responses for unsupported response media types
 - Unit, web-layer, persistence, and full API integration tests
 - Flyway database migration
 - Maven and GitHub Actions verification
@@ -457,9 +458,22 @@ curl --include --request DELETE \
 
 A subsequent `GET /api/tasks/1` returns `404 Not Found`, and collection results no longer include the deleted Task. Deleting that ID again, or deleting another valid ID that does not exist, returns a safe `404`. Zero, negative, nonnumeric, and out-of-range IDs return a safe `400`. Unexpected failures return a safe `500` without exposing internal details.
 
-Repeated deletion leaves the resource absent even though the second
-response is `404`. The endpoint does not implement soft deletion or
-batch deletion.
+Repeated deletion leaves the resource absent even though the second response is `404`. The endpoint does not implement soft deletion or batch deletion.
+
+## HTTP error boundaries
+
+The API preserves HTTP protocol errors instead of treating them as unexpected server failures.
+
+| Request | Response |
+| --- | --- |
+| `PUT /api/tasks` with `Accept: application/json` | `405 Method Not Allowed`, safe JSON error and the `Allow` header |
+| `POST /api/tasks` with `Content-Type: text/plain` and `Accept: application/json` | `415 Unsupported Media Type`, safe JSON error |
+| `GET /api/tasks` with `Accept: application/xml` | `406 Not Acceptable`, empty body |
+
+The 405 and 415 responses use the existing five-field error shape:
+`timestamp`, `status`, `error`, `message`, and `path`. Their messages are `HTTP method is not supported` and `Request Content-Type is not supported`. Spring-provided protocol headers are preserved. The API does not force a JSON error body when the requested response media type cannot be produced.
+
+WebMvc tests verify that the representative 405 and 415 requests do not invoke the use cases. Full-context integration tests verify their status, headers, safe response bodies, and unchanged database row counts. Both test layers verify the representative 406 response. These tests do not claim that response negotiation always occurs before business logic executes.
 
 ## Database schema and reliability
 
