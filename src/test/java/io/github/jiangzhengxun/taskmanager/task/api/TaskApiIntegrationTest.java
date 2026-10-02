@@ -462,6 +462,188 @@ class TaskApiIntegrationTest {
     }
 
     @Test
+    void completesAndReopensTaskThroughHttpWithoutChangingOtherFields()
+            throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "PATCH lifecycle",
+                                  "description": "Preserve editable content"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode original = objectMapper.readTree(
+                created.getResponse().getContentAsString());
+        long id = original.get("id").asLong();
+
+        assertThat(original.get("status").asText()).isEqualTo("TODO");
+
+        for (String nextStatus : new String[]{"COMPLETED", "IN_PROGRESS"}) {
+            MvcResult changed = mockMvc.perform(
+                            patch("/api/tasks/{id}/status", id)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {"status":"%s"}
+                                            """.formatted(nextStatus)))
+                    .andExpect(status().isOk())
+                    .andExpect(content()
+                            .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andReturn();
+
+            JsonNode changedBody = objectMapper.readTree(
+                    changed.getResponse().getContentAsString());
+
+            assertThat(changedBody.get("status").asText())
+                    .isEqualTo(nextStatus);
+            assertThat(changedBody.get("updatedAt").asText()).isNotBlank();
+
+            for (String field :
+                    new String[]{"id", "title", "description"}) {
+                assertThat(changedBody.get(field))
+                        .as("PATCH preserves %s", field)
+                        .isEqualTo(original.get(field));
+            }
+
+            assertThat(Duration.between(
+                    Instant.parse(original.get("createdAt").asText()),
+                    Instant.parse(changedBody.get("createdAt").asText())).abs())
+                    .as("PATCH preserves createdAt within database precision")
+                    .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+
+            entityManager.flush();
+            entityManager.clear();
+
+            MvcResult read = mockMvc.perform(get("/api/tasks/{id}", id))
+                    .andExpect(status().isOk())
+                    .andExpect(content()
+                            .contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andReturn();
+
+            JsonNode readBody = objectMapper.readTree(
+                    read.getResponse().getContentAsString());
+
+            assertThat(readBody.get("status").asText()).isEqualTo(nextStatus);
+
+            for (String field :
+                    new String[]{"id", "title", "description"}) {
+                assertThat(readBody.get(field))
+                        .as("GET preserves %s after PATCH", field)
+                        .isEqualTo(original.get(field));
+            }
+
+            assertThat(Duration.between(
+                    Instant.parse(original.get("createdAt").asText()),
+                    Instant.parse(readBody.get("createdAt").asText())).abs())
+                    .as("GET preserves createdAt within database precision")
+                    .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+
+            assertThat(Duration.between(
+                    Instant.parse(changedBody.get("updatedAt").asText()),
+                    Instant.parse(readBody.get("updatedAt").asText())).abs())
+                    .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void patchedStatusIsVisibleAfterCommitAndReplayPreservesStoredTimestamp()
+            throws Exception {
+        long id = 0L;
+        try {
+            MvcResult created = mockMvc.perform(post("/api/tasks")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "title": "Observe committed PATCH",
+                                      "description": "Keep this description"
+                                    }
+                                    """))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+
+            id = objectMapper.readTree(
+                    created.getResponse().getContentAsString())
+                    .get("id").asLong();
+
+            Map<String, Object> before = jdbcTemplate.queryForMap(
+                    """
+                    SELECT title, description, status, created_at, updated_at
+                    FROM tasks WHERE id = ?
+                    """, id);
+            assertThat(before.get("status")).isEqualTo("TODO");
+
+            MvcResult changed = mockMvc.perform(
+                            patch("/api/tasks/{id}/status", id)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\"status\":\"COMPLETED\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.status").value("COMPLETED"))
+                    .andReturn();
+
+            JsonNode changedBody = objectMapper.readTree(
+                    changed.getResponse().getContentAsString());
+
+            Map<String, Object> committed = jdbcTemplate.queryForMap(
+                    """
+                    SELECT title, description, status, created_at, updated_at
+                    FROM tasks WHERE id = ?
+                    """, id);
+
+            assertThat(committed.get("status")).isEqualTo("COMPLETED");
+            for (String field :
+                    new String[]{"title", "description", "created_at"}) {
+                assertThat(committed.get(field))
+                        .as("committed PATCH preserves %s", field)
+                        .isEqualTo(before.get(field));
+            }
+
+            Instant storedUpdatedAt =
+                    ((Timestamp) committed.get("updated_at")).toInstant();
+            assertThat(Duration.between(
+                    storedUpdatedAt,
+                    Instant.parse(changedBody.get("updatedAt").asText())).abs())
+                    .isLessThanOrEqualTo(Duration.ofNanos(1_000));
+
+            mockMvc.perform(get("/api/tasks/{id}", id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.status").value("COMPLETED"))
+                    .andExpect(jsonPath("$.title")
+                            .value("Observe committed PATCH"))
+                    .andExpect(jsonPath("$.description")
+                            .value("Keep this description"));
+
+            MvcResult replay = mockMvc.perform(
+                            patch("/api/tasks/{id}/status", id)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\"status\":\"COMPLETED\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("COMPLETED"))
+                    .andReturn();
+
+            JsonNode replayBody = objectMapper.readTree(
+                    replay.getResponse().getContentAsString());
+            assertThat(Instant.parse(replayBody.get("updatedAt").asText()))
+                    .isEqualTo(storedUpdatedAt);
+
+            Map<String, Object> afterReplay = jdbcTemplate.queryForMap(
+                    """
+                    SELECT title, description, status, created_at, updated_at
+                    FROM tasks WHERE id = ?
+                    """, id);
+            assertThat(afterReplay).isEqualTo(committed);
+        } finally {
+            if (id > 0) {
+                jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", id);
+            }
+        }
+    }
+
+    @Test
     void replacesTaskThroughHttpAndPostgreSqlAndPreservesTimestampOnReplay()
             throws Exception {
         MvcResult created = mockMvc.perform(post("/api/tasks")

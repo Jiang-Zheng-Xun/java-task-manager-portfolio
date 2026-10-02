@@ -399,6 +399,17 @@ A non-positive or non-integer ID, missing or invalid status, malformed JSON, or 
 
 This endpoint uses `PATCH` because it updates only `status`; it does not change `title` or `description`. For full replacement of all editable Task fields, use `PUT /api/tasks/{id}` under the contract below.
 
+### Verified test evidence
+
+Full-context MockMvc tests with PostgreSQL verify direct completion (`TODO` → `COMPLETED`) and reopening (`COMPLETED` → `IN_PROGRESS`), followed by GET requests. They verify that PATCH preserves the Task's identity, title, description, and creation time. This lifecycle test uses a rollback-managed test transaction; flush and clear do not prove commit.
+
+A separate test disables the outer test transaction with
+`Propagation.NOT_SUPPORTED`. After the PATCH service transaction completes, JDBC reads verify the committed status and preserved fields. Repeating the same status preserves the stored row and `updated_at` exactly. The test cleans up only the Task ID it created.
+
+HTTP timestamps may retain nanoseconds, while PostgreSQL stores microsecond precision. Cross-boundary timestamp comparisons allow at most one microsecond; unchanged database values are compared exactly.
+
+These tests use the full Spring context and MockMvc, not a live network server. JDBC observation occurs outside the original write transaction; the test does not require a different physical pooled connection.
+
 ## Replace Task API
 
 ### Endpoint and complete editable representation
