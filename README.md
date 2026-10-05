@@ -4,7 +4,7 @@ A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, M
 
 ## Current scope
 
-The current prototype provides executable Task creation, read, and update vertical slices:
+The current prototype provides executable Task creation, read, update, and deletion vertical slices:
 
 - `POST /api/tasks`
 - `GET /api/tasks`
@@ -23,6 +23,25 @@ The current prototype provides executable Task creation, read, and update vertic
 - Maven and GitHub Actions verification
 
 The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. PATCH updates only a Task's status; PUT replaces its editable title, description, and status. Client-controlled sorting, filtering, search, authentication, and deployment remain outside the current scope.
+
+## Documentation
+
+- [Architecture and evidence boundaries](docs/architecture.md)
+- [Technology baseline decision](docs/adr/0001-technology-baseline.md)
+- [Complete local API demo](docs/demo.md)
+
+## API overview
+
+| Operation | Endpoint | Successful response |
+| --- | --- | --- |
+| Create | `POST /api/tasks` | `201 Created`, Task body and `Location` |
+| List | `GET /api/tasks?page=0&size=20` | `200 OK`, array and `X-Has-Next-Page` |
+| Read | `GET /api/tasks/{id}` | `200 OK`, Task body |
+| Update status | `PATCH /api/tasks/{id}/status` | `200 OK`, Task body |
+| Replace editable fields | `PUT /api/tasks/{id}` | `200 OK`, Task body |
+| Delete | `DELETE /api/tasks/{id}` | `204 No Content`, empty body |
+
+See the endpoint sections below for validation, missing-resource behavior, replay semantics, and examples. Generated IDs must be taken from actual create responses; example IDs are illustrative.
 
 ## Technology baseline
 
