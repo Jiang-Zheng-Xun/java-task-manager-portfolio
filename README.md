@@ -2,6 +2,15 @@
 
 A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, Maven, PostgreSQL 17, Flyway, and GitHub Actions.
 
+## Portfolio status and security limits
+
+This is a local-development backend portfolio prototype. It provides Task APIs, PostgreSQL persistence, and 123-test regression and CI evidence. It does not provide a publicly deployed service.
+
+Security review and targeted dependency remediation are documented in [Day 14 security assessment](docs/security-assessment-day14.md). Known findings, applicability uncertainties, and tool/environment coverage gaps remain. Passing tests and successful scans do not establish complete security validation or production readiness.
+
+Authentication and authorization are outside the current scope.
+Use only isolated, replaceable development/test data and retain the documented localhost bindings.
+
 ## Current scope
 
 The current prototype provides executable Task creation, read, update, and deletion vertical slices:
@@ -536,7 +545,9 @@ mvn --batch-mode --no-transfer-progress clean verify
 
 ## Security baseline
 
-- The repository is private during active development.
+- Public repository content is separate from private operational environments;
+  local environment files, credentials, database contents, and scan reports
+  are not publication artifacts.
 - PostgreSQL is bound to `127.0.0.1` for local development.
 - Real credentials are stored only in the ignored `.env` file.
 - `.env.example` contains placeholders only.
