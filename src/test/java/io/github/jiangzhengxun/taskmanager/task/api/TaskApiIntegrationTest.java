@@ -33,12 +33,14 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Propagation;
+import io.github.jiangzhengxun.taskmanager.support.testdb.GuardedTestDatabase;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @AutoConfigureTestDatabase(
         replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional
+@GuardedTestDatabase
 class TaskApiIntegrationTest {
 
     @Autowired

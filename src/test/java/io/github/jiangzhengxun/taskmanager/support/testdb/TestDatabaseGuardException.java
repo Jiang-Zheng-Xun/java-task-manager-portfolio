@@ -12,8 +12,10 @@ public final class TestDatabaseGuardException extends IllegalStateException {
 
     /** Lifecycle stage that rejected the context. */
     public enum Stage {
+        POLICY,
         INITIALIZER,
-        BEAN_DEFINITION
+        BEAN_DEFINITION,
+        IDENTITY
     }
 
     /** Fixed rejection reasons. The first six mirror {@link TestDatabaseConfigValidator.ErrorCategory}. */
@@ -39,7 +41,27 @@ public final class TestDatabaseGuardException extends IllegalStateException {
         MIGRATION_INITIALIZER_UNSUPPORTED,
         MIGRATION_STRATEGY_REJECTED,
         FLYWAY_CUSTOMIZER_REJECTED,
-        FLYWAY_EXTENSION_REJECTED
+        FLYWAY_EXTENSION_REJECTED,
+        POLICY_FILE_MISSING,
+        POLICY_FILE_UNREADABLE,
+        POLICY_FIELD_MISSING,
+        POLICY_FIELD_UNKNOWN,
+        POLICY_FIELD_DUPLICATE,
+        POLICY_SNAPSHOT_MISSING,
+        POLICY_SNAPSHOT_DUPLICATE,
+        DRIVER_TIMEOUT_REJECTED,
+        DRIVER_TIMEOUT_MISSING,
+        IDENTITY_DATASOURCE_UNAVAILABLE,
+        IDENTITY_QUERY_FAILED,
+        IDENTITY_ROW_MISSING,
+        IDENTITY_ROW_DUPLICATE,
+        IDENTITY_VALUE_NULL,
+        IDENTITY_DATABASE_MISMATCH,
+        IDENTITY_ROLE_MISMATCH,
+        IDENTITY_OWNER_MISMATCH,
+        IDENTITY_PRIVILEGE_REJECTED,
+        IDENTITY_MEMBERSHIP_REJECTED,
+        IDENTITY_CLEANUP_FAILED
     }
 
     private final Stage stage;
