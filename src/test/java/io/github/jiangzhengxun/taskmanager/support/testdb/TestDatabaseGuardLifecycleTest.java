@@ -493,6 +493,72 @@ class TestDatabaseGuardLifecycleTest {
                 Reason.FLYWAY_CONNECTION_DETAILS_UNSUPPORTED);
     }
 
+    // ---- guarded entry: controlled migration strategy only ----
+
+    @Test
+    void guardedEntryAcceptsExactlyTheControlledStrategyWithoutInstantiation() {
+        guardedRunner().withUserConfiguration(GuardedTestDatabaseConfiguration.class)
+                .run(context -> assertReachedNextStage(context.getStartupFailure()));
+    }
+
+    @Test
+    void guardedEntryWithoutControlledStrategyIsRejected() {
+        assertBeanDefinitionRejects(guardedRunner(), Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void guardedEntryWithAdditionalStrategyIsRejected() {
+        assertBeanDefinitionRejects(guardedRunner()
+                .withUserConfiguration(GuardedTestDatabaseConfiguration.class, MigrationStrategyFixture.class),
+                Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void guardedEntryWithOnlyOtherStrategyIsRejected() {
+        assertBeanDefinitionRejects(guardedRunner().withUserConfiguration(MigrationStrategyFixture.class),
+                Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void guardedEntryRejectsSameMethodNameAndTypeFromAnotherConfiguration() {
+        assertBeanDefinitionRejects(guardedRunner().withUserConfiguration(ImpostorGuardedStrategyFixture.class),
+                Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void guardedEntryRejectsManualSingletonSubstitute() {
+        ApplicationContextRunner runner = guardedRunner().withInitializer(context -> context.getBeanFactory()
+                .registerSingleton(TestDatabaseBeanDefinitionGuard.GUARDED_STRATEGY_FACTORY_METHOD,
+                        new GuardedFlywayMigrationStrategy(new TestDatabaseIdentityPolicy("a", "b", "b", "b"))));
+        assertBeanDefinitionRejects(runner, Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void guardedEntryWithPolicySnapshotStillAcceptsExactlyTheControlledStrategy() {
+        guardedRunner().withInitializer(this::registerPolicySnapshot)
+                .withUserConfiguration(GuardedTestDatabaseConfiguration.class)
+                .run(context -> assertReachedNextStage(context.getStartupFailure()));
+    }
+
+    @Test
+    void policySnapshotDoesNotSubstituteForTheControlledStrategy() {
+        assertBeanDefinitionRejects(guardedRunner().withInitializer(this::registerPolicySnapshot),
+                Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void policySnapshotDoesNotPermitAnAdditionalStrategy() {
+        assertBeanDefinitionRejects(guardedRunner().withInitializer(this::registerPolicySnapshot)
+                .withUserConfiguration(GuardedTestDatabaseConfiguration.class, MigrationStrategyFixture.class),
+                Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
+    @Test
+    void controlledStrategyIsRejectedOutsideGuardedEntry() {
+        assertBeanDefinitionRejects(runner("local", LOCAL_URL, LOCAL_USER)
+                .withUserConfiguration(GuardedTestDatabaseConfiguration.class), Reason.MIGRATION_STRATEGY_REJECTED);
+    }
+
     @Test
     void migrationStrategyIsRejectedByBeanDefinitionGuard() {
         assertBeanDefinitionRejects(runner("local", LOCAL_URL, LOCAL_USER)
@@ -689,6 +755,15 @@ class TestDatabaseGuardLifecycleTest {
                 .withPropertyValues(settings(mode, url, username));
     }
 
+    private ApplicationContextRunner guardedRunner() {
+        return baseRunner()
+                .withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                        "synthetic-driver-timeouts", TestDatabaseGuardInitializer.DRIVER_TIMEOUTS)))
+                .withInitializer(TestDatabaseGuardInitializer.guarded(defaultPolicy()))
+                .withInitializer(this::registerProbe)
+                .withPropertyValues(settings("local", LOCAL_URL, LOCAL_USER));
+    }
+
     private static String[] settings(String mode, String url, String username) {
         return new String[] {
             mode == null ? "nodb.fixture.mode-absent=true" : TestDatabaseGuardInitializer.MODE_PROPERTY + "=" + mode,
@@ -696,6 +771,12 @@ class TestDatabaseGuardLifecycleTest {
             username == null ? "nodb.fixture.username-absent=true" : "spring.datasource.username=" + username,
             "spring.datasource.password=" + SYNTHETIC_PASSWORD
         };
+    }
+
+    private void registerPolicySnapshot(ConfigurableApplicationContext context) {
+        // Same registration path as GuardedTestDatabaseInitializer; the fixed ci policy needs no policy file.
+        GuardedTestDatabaseInitializer.registerPolicySnapshot(context.getBeanFactory(),
+                TestDatabasePolicyProvider.resolve("ci", null));
     }
 
     private void registerProbe(ConfigurableApplicationContext context) {
@@ -936,6 +1017,14 @@ class TestDatabaseGuardLifecycleTest {
     static class CustomFlywayConnectionDetailsFixture {
         @Bean
         FlywayConnectionDetails fixtureFlywayConnectionDetails() {
+            return neverInstantiated();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ImpostorGuardedStrategyFixture {
+        @Bean
+        GuardedFlywayMigrationStrategy guardedFlywayMigrationStrategy() {
             return neverInstantiated();
         }
     }

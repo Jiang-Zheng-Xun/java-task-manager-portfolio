@@ -9,8 +9,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import io.github.jiangzhengxun.taskmanager.support.testdb.GuardedTestDatabase;
 
 @SpringBootTest
+@GuardedTestDatabase
 class TaskDatabaseConstraintIntegrationTest {
 
     @Autowired
