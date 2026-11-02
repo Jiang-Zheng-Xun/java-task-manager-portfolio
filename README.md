@@ -29,6 +29,8 @@ The server initializes every new Task with status `TODO`. Collection results use
 - [Architecture and evidence boundaries](docs/architecture.md)
 - [Technology baseline decision](docs/adr/0001-technology-baseline.md)
 - [Complete local API demo](docs/demo.md)
+- [Task Evidence API](docs/task-evidence-api.md)
+- [Task Evidence verification](docs/task-evidence-verification.md) and [regression index](docs/task-evidence-regression-index.tsv)
 
 ## API overview
 
