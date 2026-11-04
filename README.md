@@ -31,6 +31,18 @@ The server initializes every new Task with status `TODO`. Collection results use
 - [Complete local API demo](docs/demo.md)
 - [Task Evidence API](docs/task-evidence-api.md)
 - [Task Evidence verification](docs/task-evidence-verification.md) and [regression index](docs/task-evidence-regression-index.tsv)
+- [Task Evidence HTTP demo runbook](docs/task-evidence-http-demo-runbook.md), [operation spec](docs/task-evidence-http-demo-spec-v1.0.md), and [AI delivery case](docs/task-evidence-ai-delivery-case-v1.0.md)
+
+## Two separate local flows
+
+| | Task CRUD demo | Task Evidence demo |
+| --- | --- | --- |
+| Guide | [docs/demo.md](docs/demo.md) and the setup below | [Runbook](docs/task-evidence-http-demo-runbook.md) |
+| Entry | `compose.yaml`, `.env`, `mvn spring-boot:run` | `scripts/task-evidence-demo.sh` only |
+| Database | Local PostgreSQL on `127.0.0.1` from the root compose file | Dedicated database on `127.0.0.1:55433`, with generated one-time credentials |
+| Application port | `127.0.0.1:8080` | `127.0.0.1:18080` |
+
+Do not mix the two: the Evidence demo does not use `.env` or the root `compose.yaml`. Its entry requires a clean, committed working tree and fixed local paths, so it does not run on arbitrary machines or clones. See the runbook for its preconditions and limits.
 
 ## API overview
 
@@ -526,9 +538,10 @@ The ID primary key provides a unique B-tree index. The implemented list query or
 The GitHub Actions workflow runs Maven verification with:
 
 - Eclipse Temurin Java 21
-- PostgreSQL 17.11 service container
+- A job-local PostgreSQL 17.11 container, created and removed by `.github/scripts/testdb-ci.sh`, not a workflow service container
+- The guarded test database mode (`TEST_DB_MODE=ci`)
 - Read-only repository content permission
-- CI-only database credentials
+- Database credentials generated inside the job, kept in private files and passed through stdin and the process environment
 
 CI executes:
 
@@ -536,10 +549,12 @@ CI executes:
 mvn --batch-mode --no-transfer-progress clean verify
 ```
 
+Maven output is captured first. It is displayed, and test reports are prepared as an artifact, only after a scan for the job's generated secrets passes. The scan does not turn a Maven failure into success, and it is not a guarantee that nothing leaked.
+
 ## Security baseline
 
-- The repository is private during active development.
+- The repository is public; the project is not a publicly deployed service.
 - PostgreSQL is bound to `127.0.0.1` for local development.
-- Real credentials are stored only in the ignored `.env` file.
-- `.env.example` contains placeholders only.
-- CI uses an explicit test-only database password.
+- Local Task CRUD setup: real credentials are stored only in the ignored `.env` file, and `.env.example` contains placeholders only.
+- Task Evidence demo: it does not use `.env`. Its entry generates one-time credentials for each run; see the [runbook](docs/task-evidence-http-demo-runbook.md).
+- CI: tests use a job-local PostgreSQL container. Its credentials are generated inside the job, kept in private files, and passed through stdin and the process environment; no CI database password is stored in the repository. The Maven log and Surefire reports are scanned for those generated secrets before they are displayed or prepared as an artifact. A clean scan does not turn a Maven failure into success, and it is not a guarantee that nothing leaked.
