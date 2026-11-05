@@ -1,0 +1,38 @@
+# Dedicated Task Evidence demo database. Use only through scripts/task-evidence-demo.sh (its dc() wrapper):
+#   docker compose --project-name jtm-evidence-demo --file scripts/task-evidence-demo-compose.yaml --env-file /dev/null ...
+# No secret files are mounted. DEMO_BOOTSTRAP_PASSWORD is needed only for the first `up` (initdb); provisioning
+# (scripts/task-evidence-demo-libpq.py) disables that password right after use (ALTER ROLE ... PASSWORD NULL).
+# r4: SCRAM is requested explicitly for TCP logins and stored passwords; no md5 or trust for host connections.
+# POSTGRES_HOST_AUTH_METHOD and the `command` override are postgres image features; see the runbook for accepted runs.
+# r5: every resource carries the per-run label jtm.demo.run-id (DEMO_RUN_ID is required; compose refuses without it).
+# The entry script records the exact container/volume/network IDs and re-checks this label before stop or removal.
+name: jtm-evidence-demo
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    labels:
+      jtm.demo.run-id: "${DEMO_RUN_ID:?DEMO_RUN_ID is required}"
+    command: ["postgres", "-c", "password_encryption=scram-sha-256"]
+    environment:
+      POSTGRES_DB: task_evidence_demo
+      POSTGRES_USER: task_evidence_demo_bootstrap
+      POSTGRES_PASSWORD: "${DEMO_BOOTSTRAP_PASSWORD:-}"
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8 --auth-host=scram-sha-256"
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - demo-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task_evidence_demo_bootstrap -d task_evidence_demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  demo-data:
+    labels:
+      jtm.demo.run-id: "${DEMO_RUN_ID:?DEMO_RUN_ID is required}"
+networks:
+  default:
+    labels:
+      jtm.demo.run-id: "${DEMO_RUN_ID:?DEMO_RUN_ID is required}"

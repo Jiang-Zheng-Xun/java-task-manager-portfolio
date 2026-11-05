@@ -16,27 +16,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:17.11-alpine
-        env:
-          POSTGRES_DB: task_manager
-          POSTGRES_USER: task_manager
-          POSTGRES_PASSWORD: ci-only-password-not-a-secret
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U task_manager -d task_manager"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    timeout-minutes: 30
 
     env:
-      DB_URL: jdbc:postgresql://localhost:5432/task_manager
-      DB_USERNAME: task_manager
-      DB_PASSWORD: ci-only-password-not-a-secret
-      SERVER_ADDRESS: 127.0.0.1
+      # postgres:17.11-alpine image index digest (linux/amd64 entry recorded in the delivery evidence).
+      JTM_PG_IMAGE: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+      JTM_PG_NAME: jtm-ci-pg-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
 
     steps:
       - name: Check out repository
@@ -49,5 +34,37 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Build and verify
-        run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Provision job-local test database
+        id: provision
+        timeout-minutes: 5
+        run: bash .github/scripts/testdb-ci.sh setup
+
+      - name: Build and verify (guarded CI test database mode)
+        id: verify
+        timeout-minutes: 20
+        env:
+          TEST_DB_MODE: ci
+          DB_URL: jdbc:postgresql://localhost:5432/task_manager_test
+          DB_USERNAME: jtm_test
+          SERVER_ADDRESS: 127.0.0.1
+        run: bash .github/scripts/testdb-ci.sh verify
+
+      - name: Scan test output for generated secrets, then display it
+        id: scan
+        if: ${{ always() && (steps.verify.outcome == 'success' || steps.verify.outcome == 'failure') }}
+        timeout-minutes: 5
+        run: python3 -I .github/scripts/testdb-ci-report.py
+
+      - name: Upload scanned test reports
+        if: ${{ always() && steps.scan.outcome == 'success' && steps.scan.outputs.eligible == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ steps.scan.outputs.label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/jtm-ci/artifact
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove job-local test database and private files
+        if: ${{ always() }}
+        timeout-minutes: 3
+        run: bash .github/scripts/testdb-ci.sh cleanup
