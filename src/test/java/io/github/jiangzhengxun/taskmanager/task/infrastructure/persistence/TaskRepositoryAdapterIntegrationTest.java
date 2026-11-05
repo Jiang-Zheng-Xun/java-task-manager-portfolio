@@ -15,11 +15,13 @@ import org.springframework.context.annotation.Import;
 import io.github.jiangzhengxun.taskmanager.task.application.port.out.TaskRepository;
 import io.github.jiangzhengxun.taskmanager.task.domain.Task;
 import io.github.jiangzhengxun.taskmanager.task.domain.TaskStatus;
+import io.github.jiangzhengxun.taskmanager.support.testdb.GuardedTestDatabase;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(
         replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({TaskRepositoryAdapter.class, TaskMapper.class})
+@GuardedTestDatabase
 class TaskRepositoryAdapterIntegrationTest {
 
     @Autowired

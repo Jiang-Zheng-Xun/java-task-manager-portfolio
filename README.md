@@ -4,16 +4,16 @@ A verifiable backend portfolio project built with Java 21, Spring Boot 3.5.16, M
 
 ## Portfolio status and security limits
 
-This is a local-development backend portfolio prototype. It provides Task APIs, PostgreSQL persistence, and 123-test regression and CI evidence. It does not provide a publicly deployed service.
+This is a local-development backend portfolio prototype. It provides Task and Task Evidence APIs, PostgreSQL persistence, a guarded test database path, and regression and CI evidence. It does not provide a publicly deployed service.
 
-Security review and targeted dependency remediation are documented in [Day 14 security assessment](docs/security-assessment-day14.md). Known findings, applicability uncertainties, and tool/environment coverage gaps remain. Passing tests and successful scans do not establish complete security validation or production readiness.
+Security review and targeted dependency remediation are documented in [Day 14 security assessment](docs/security-assessment-day14.md). That assessment is dated 2026-10-07 and does not cover the later test database guard, Task Evidence API, or Evidence demo. Known findings, applicability uncertainties, and tool/environment coverage gaps remain. Passing tests and successful scans do not establish complete security validation or production readiness.
 
 Authentication and authorization are outside the current scope.
 Use only isolated, replaceable development/test data and retain the documented localhost bindings.
 
 ## Current scope
 
-The current prototype provides executable Task creation, read, update, and deletion vertical slices:
+The current prototype provides executable Task creation, read, update, and deletion vertical slices, plus append-only Task Evidence records:
 
 - `POST /api/tasks`
 - `GET /api/tasks`
@@ -21,6 +21,8 @@ The current prototype provides executable Task creation, read, update, and delet
 - `PATCH /api/tasks/{id}/status`
 - `PUT /api/tasks/{id}`
 - `DELETE /api/tasks/{id}`
+- `POST /api/tasks/{id}/evidence`
+- `GET /api/tasks/{id}/evidence`
 - Request validation and strict rejection of unsupported fields
 - Domain-level creation and lookup rules
 - PostgreSQL persistence with a database-generated ID
@@ -28,16 +30,32 @@ The current prototype provides executable Task creation, read, update, and delet
   `405 Method Not Allowed`, `415 Unsupported Media Type`, and
   `500 Internal Server Error`; empty `406 Not Acceptable` responses for unsupported response media types
 - Unit, web-layer, persistence, and full API integration tests
-- Flyway database migration
+- Flyway database migrations
+- Guarded test database path for database-backed tests
 - Maven and GitHub Actions verification
 
-The server initializes every new Task with status `TODO`. Collection results use bounded, zero-based pagination and deterministic ascending Task ID order. PATCH updates only a Task's status; PUT replaces its editable title, description, and status. Client-controlled sorting, filtering, search, authentication, and deployment remain outside the current scope.
+The server initializes every new Task with status `TODO`. Task collection results use bounded, zero-based pagination and deterministic ascending Task ID order. PATCH updates only a Task's status; PUT replaces its editable title, description, and status. Creating Evidence never changes Task fields and does not mean a Task is accepted or done. Client-controlled sorting, filtering, search, authentication, and deployment remain outside the current scope.
 
 ## Documentation
 
 - [Architecture and evidence boundaries](docs/architecture.md)
 - [Technology baseline decision](docs/adr/0001-technology-baseline.md)
 - [Complete local API demo](docs/demo.md)
+- [Task Evidence API](docs/task-evidence-api.md)
+- [Task Evidence verification](docs/task-evidence-verification.md) and [regression index](docs/task-evidence-regression-index.tsv)
+- [Task Evidence HTTP demo runbook](docs/task-evidence-http-demo-runbook.md), [operation spec](docs/task-evidence-http-demo-spec-v1.0.md), and [AI delivery case](docs/task-evidence-ai-delivery-case-v1.0.md)
+- [Test database guard integration record](daily-log/testdb-guard-integration-2026-10-31.md), a dated log written before the first remote CI run
+
+## Two separate local flows
+
+| | Task CRUD demo | Task Evidence demo |
+| --- | --- | --- |
+| Guide | [docs/demo.md](docs/demo.md) and the setup below | [Runbook](docs/task-evidence-http-demo-runbook.md) |
+| Entry | `compose.yaml`, `.env`, `mvn spring-boot:run` | `scripts/task-evidence-demo.sh` only |
+| Database | Local PostgreSQL on `127.0.0.1` from the root compose file | Dedicated database on `127.0.0.1:55433`, with generated one-time credentials |
+| Application port | `127.0.0.1:8080` | `127.0.0.1:18080` |
+
+Do not mix the two: the Evidence demo does not use `.env` or the root `compose.yaml`. Its entry requires a clean, committed working tree and fixed local paths, so it does not run on arbitrary machines or clones. See the runbook for its preconditions and limits.
 
 ## API overview
 
@@ -49,8 +67,10 @@ The server initializes every new Task with status `TODO`. Collection results use
 | Update status | `PATCH /api/tasks/{id}/status` | `200 OK`, Task body |
 | Replace editable fields | `PUT /api/tasks/{id}` | `200 OK`, Task body |
 | Delete | `DELETE /api/tasks/{id}` | `204 No Content`, empty body |
+| Create Evidence | `POST /api/tasks/{id}/evidence` | `201 Created`, Evidence body, no `Location` |
+| List Evidence | `GET /api/tasks/{id}/evidence?page=0&size=20` | `200 OK`, array and `X-Has-Next-Page` |
 
-See the endpoint sections below for validation, missing-resource behavior, replay semantics, and examples. Generated IDs must be taken from actual create responses; example IDs are illustrative.
+See the endpoint sections below for validation, missing-resource behavior, replay semantics, and examples. Generated IDs must be taken from actual create responses; example IDs are illustrative. Evidence validation, ordering, and errors are documented in the [Task Evidence API](docs/task-evidence-api.md).
 
 ## Technology baseline
 
@@ -67,6 +87,12 @@ See the endpoint sections below for validation, missing-resource behavior, repla
 ```text
 io.github.jiangzhengxun.taskmanager
 ├── configuration
+├── evidence
+│   ├── api
+│   ├── application
+│   ├── domain
+│   └── infrastructure
+│       └── persistence
 └── task
     ├── api
     ├── application
@@ -122,12 +148,6 @@ source .env
 set +a
 ```
 
-Run the complete local verification:
-
-```bash
-mvn --batch-mode --no-transfer-progress clean verify
-```
-
 Start the application:
 
 ```bash
@@ -140,7 +160,7 @@ A successful startup includes:
 Started JavaTaskManagerPortfolioApplication
 ```
 
-The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/{id}`, `PATCH /api/tasks/{id}/status`, `PUT /api/tasks/{id}`, and `DELETE /api/tasks/{id}`; the root path is not an application endpoint.
+The application listens on `127.0.0.1:8080` by default. The implemented endpoints are `POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/{id}`, `PATCH /api/tasks/{id}/status`, `PUT /api/tasks/{id}`, `DELETE /api/tasks/{id}`, `POST /api/tasks/{id}/evidence`, and `GET /api/tasks/{id}/evidence`; the root path is not an application endpoint.
 
 Stop the application with `Ctrl+C`.
 
@@ -149,6 +169,8 @@ Stop the local PostgreSQL container when finished:
 ```bash
 docker compose down
 ```
+
+This setup runs the application only. `mvn verify` also needs the guarded test database settings; see [Test database guard](#test-database-guard).
 
 ## Create Task API
 
@@ -526,16 +548,32 @@ src/main/resources/db/migration
 
 The ID primary key provides a unique B-tree index. The implemented list query orders bounded pages by ascending ID; there is currently no status- or timestamp-filtered query requiring another index. No additional migration or index was needed for this reliability review.
 
+`V2__create_task_evidence_table.sql` creates the `task_evidence` table, with a cascading foreign key to `tasks` and a composite index on task, creation time, and ID. See the [Task Evidence API schema notes](docs/task-evidence-api.md#schema-migration-v2).
+
 `TaskDatabaseConstraintIntegrationTest` writes directly through JDBC to PostgreSQL. It verifies a valid row at the title and description length limits, and checks that PostgreSQL rejects blank or null titles, invalid or null statuses, null timestamps, and values exceeding column lengths. These tests exercise database enforcement independently of HTTP request validation and domain normalization. The successful test deletes its own row; rejected inserts do not leave rows behind.
+
+## Test database guard
+
+Database-backed Spring tests carry `@GuardedTestDatabase`. Before migration and JPA startup, the guard checks the resolved datasource URL and username against an independent policy, rejects datasource, JPA, and Flyway definitions outside the controlled path, and verifies the connected database name, roles, and role privileges. A rejected target stops the test context.
+
+`TEST_DB_MODE` selects the policy and accepts only `local` or `ci`:
+
+| Mode | Policy | Used by |
+| --- | --- | --- |
+| `ci` | Fixed in `TestDatabasePolicyProvider`: `task_manager_test` on `localhost:5432` with role `jtm_test`; a policy file is rejected | GitHub Actions |
+| `local` | A private properties file named by `TEST_DB_POLICY_FILE`, kept outside the repository and holding no password | Local runs |
+
+Local database-backed runs need a dedicated test database and a restricted login role: no superuser, create-database, create-role, replication, or bypass-RLS attribute, and no role membership. The root `compose.yaml` role is the image's superuser, so that database does not satisfy the policy, and this repository provides no local provisioning script. Without a valid mode and policy, database-backed tests fail closed.
 
 ## Continuous integration
 
 The GitHub Actions workflow runs Maven verification with:
 
 - Eclipse Temurin Java 21
-- PostgreSQL 17.11 service container
+- A job-local PostgreSQL 17.11 container, created and removed by `.github/scripts/testdb-ci.sh`, not a workflow service container
+- The guarded test database mode (`TEST_DB_MODE=ci`)
 - Read-only repository content permission
-- CI-only database credentials
+- Database credentials generated inside the job, kept in private files and passed through stdin and the process environment
 
 CI executes:
 
@@ -543,12 +581,15 @@ CI executes:
 mvn --batch-mode --no-transfer-progress clean verify
 ```
 
+Maven output is captured first. It is displayed, and test reports are prepared as an artifact, only after a scan for the job's generated secrets passes. The scan does not turn a Maven failure into success, and it is not a guarantee that nothing leaked.
+
 ## Security baseline
 
+- The repository is public; the project is not a publicly deployed service.
 - Public repository content is separate from private operational environments;
   local environment files, credentials, database contents, and scan reports
   are not publication artifacts.
 - PostgreSQL is bound to `127.0.0.1` for local development.
-- Real credentials are stored only in the ignored `.env` file.
-- `.env.example` contains placeholders only.
-- CI uses an explicit test-only database password.
+- Local Task CRUD setup: real credentials are stored only in the ignored `.env` file, and `.env.example` contains placeholders only.
+- Task Evidence demo: it does not use `.env`. Its entry generates one-time credentials for each run; see the [runbook](docs/task-evidence-http-demo-runbook.md).
+- CI: tests use a job-local PostgreSQL container. Its credentials are generated inside the job, kept in private files, and passed through stdin and the process environment; no CI database password is stored in the repository. The Maven log and Surefire reports are scanned for those generated secrets before they are displayed or prepared as an artifact. A clean scan does not turn a Maven failure into success, and it is not a guarantee that nothing leaked.
